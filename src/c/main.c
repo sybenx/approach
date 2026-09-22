@@ -12,11 +12,11 @@
   #define RES_TIME   RESOURCE_ID_FONT_XB_54
   #define RES_MID    RESOURCE_ID_FONT_XB_22
   #define RES_SMALL  RESOURCE_ID_FONT_XB_15
-  #define RES_LABEL  RESOURCE_ID_FONT_SB_11
   #define SZ_TIME    54
   #define SZ_MID     22
-  #define RES_HEADER RESOURCE_ID_FONT_XB_18   // 15px read as tiny on this display
+  #define RES_HEADER RESOURCE_ID_FONT_XB_17   // 15px read as tiny on this display
   #define HEADER_FALLBACK s_font_small
+  #define LABEL_FONT FONT_KEY_GOTHIC_14_BOLD
 #else                                     // 144 x 168 watches
   #define HEADER_H   25
   #define DATE_H     46
@@ -28,12 +28,15 @@
   #define RES_TIME   RESOURCE_ID_FONT_XB_40
   #define RES_MID    RESOURCE_ID_FONT_XB_16
   #define RES_SMALL  RESOURCE_ID_FONT_XB_12
-  #define RES_LABEL  RESOURCE_ID_FONT_SB_10
   #define SZ_TIME    40
   #define SZ_MID     16
   #define HEADER_FONT s_font_mid     // 12px bold digits (6 vs 8) blur together
+  #define LABEL_FONT FONT_KEY_GOTHIC_14          // bold is too wide for MONTH in a 46px cell
 #endif
 
+
+// Labels use Pebble's hand-drawn Gothic (LABEL_FONT above): Archivo SemiBold is too thin to
+// rasterise evenly this small.
 #define WEATHER_EVERY 30   // minutes between weather refreshes
 
 /* ============================ settings ============================== */
@@ -45,7 +48,8 @@ enum { C_BG, C_TIME, C_TEXT, C_LABEL, C_RULE, C_BAR, C_EMPTY, C_HEART, C_COUNT }
 
 // persist keys
 enum { P_TEMP = 1, P_COND, P_THEME = 10, P_ACCENT, P_SLOT_TL, P_SLOT_TR, P_SLOT_B1, P_SLOT_B2, P_SLOT_B3, P_PERIOD, P_VIBE,
-       P_COLORS, P_BT_VIBE, P_BT_ICON, P_LEAD_ZERO };
+       P_COLORS, P_BT_VIBE, P_BT_ICON, P_LEAD_ZERO, P_CLOCK,
+       P_DAY_COLORS, P_DAY_ACCENT, P_AUTO_THEME, P_DAY_START, P_NIGHT_START, P_MARK_VIBE, P_LOW_BATT };
 
 static struct {
   int  theme;        // 1 dark, 0 light
@@ -57,24 +61,45 @@ static struct {
   bool bt_vibe;      // buzz when the phone disconnects
   bool bt_icon;      // show the disconnected icon
   bool lead_zero;    // 09:15 rather than 9:15
+  int  clock;        // 0 follow the watch, 12 or 24
+  bool auto_theme;   // switch between the day and night looks by the clock
+  int  day_start, night_start;   // hours
+  int  day_color[C_COUNT];       // day set, used only with auto_theme on colour watches
+  int  day_accent;
+  bool mark_vibe;    // double buzz at :00 / :30
+  bool low_batt;     // take over the top-right slot when the battery is low
 } s = { 1, 0xFF0000, { MOD_WEATHER, MOD_HEART, MOD_DAY, MOD_DATE, MOD_MONTH }, 1800, false,
-        { -1, -1, -1, -1, -1, -1, -1, -1 }, false, true, false };
+        { -1, -1, -1, -1, -1, -1, -1, -1 }, false, true, false, 0,
+        false, 7, 19, { -1, -1, -1, -1, -1, -1, -1, -1 }, 0xFF0000, false, true };
 
 typedef struct { GColor bg, time, text, label, rule, bar, empty, accent, heart; } Theme;
 
-static Theme theme(void) {
+static bool is_daytime(struct tm *t) {
+  int h = t->tm_hour;
+  return s.day_start <= s.night_start ? (h >= s.day_start && h < s.night_start)
+                                      : (h >= s.day_start || h < s.night_start);
+}
+
+// With the automatic switch on, black-and-white watches go light by day and dark by night, and
+// colour watches swap to the day colour set (which falls back to the light theme where unset).
+static Theme theme(struct tm *t) {
   Theme th;
-  bool dark = s.theme == 1;
+  bool day = s.auto_theme && is_daytime(t);
+  bool dark = s.auto_theme ? !day : s.theme == 1;
+#if defined(PBL_COLOR)
+  const int *colors = day ? s.day_color : s.color;
+  int accent = day ? s.day_accent : s.accent;
+#endif
   GColor ink = dark ? GColorWhite : GColorBlack;
   th.bg     = dark ? GColorBlack : GColorWhite;
   th.time   = th.text = th.rule = th.bar = ink;
   th.label  = PBL_IF_COLOR_ELSE(dark ? GColorLightGray : GColorDarkGray, ink);
   th.empty  = PBL_IF_COLOR_ELSE(dark ? GColorDarkGray : GColorLightGray, th.bg);
-  th.accent = PBL_IF_COLOR_ELSE(GColorFromHEX(s.accent), ink);
+  th.accent = PBL_IF_COLOR_ELSE(GColorFromHEX(accent), ink);
   th.heart  = th.accent;
 #if defined(PBL_COLOR)
   GColor *slots[C_COUNT] = { &th.bg, &th.time, &th.text, &th.label, &th.rule, &th.bar, &th.empty, &th.heart };
-  for (int i = 0; i < C_COUNT; i++) if (s.color[i] >= 0) *slots[i] = GColorFromHEX(s.color[i]);
+  for (int i = 0; i < C_COUNT; i++) if (colors[i] >= 0) *slots[i] = GColorFromHEX(colors[i]);
 #endif
   return th;
 }
@@ -99,26 +124,32 @@ static bool s_vibed;
 static bool s_connected = true;
 
 /* ============================ time maths ============================ */
-// Countdown phases, finest first: {window seconds, segment seconds}.
-static const struct { int window, step; } PHASES[] = { {5, 1}, {15, 3}, {60, 15}, {600, 60} };
+// Countdown phases, finest first: the bar covers `from` down to `to` seconds left in `step`s.
+// "Live" phases light the segment you're in, so the bar is full for its last step and every
+// last-minute bar finishes full; the others light a segment once its step has passed.
+static const struct { int from, to, step; bool live; } PHASES[] = {
+  { 10, 0, 1, true }, { 60, 10, 5, true }, { 600, 0, 60, false },
+};
 #define N_PHASES (int)(sizeof PHASES / sizeof PHASES[0])
 
-// Picks the finest phase whose window covers the time remaining; outside all of them the
-// bar spans the whole period in minutes. prev_window is where the next finer phase starts.
-static int current_phase(struct tm *t, int *remaining_out, int *window_out, int *prev_window_out) {
-  int into = (t->tm_min * 60 + t->tm_sec) % s.period;
-  int remaining = s.period - into;
-  int window = s.period, step = 60, prev = PHASES[N_PHASES - 1].window;
+typedef struct { int remaining, step, from, cells, filled, next; } Phase;   // next: where the finer phase starts
+
+// Outside every listed phase the bar spans the whole period in minutes.
+static Phase current_phase(struct tm *t) {
+  Phase ph = { .step = 60, .from = s.period, .cells = s.period / 60, .next = PHASES[N_PHASES - 1].from };
+  ph.remaining = s.period - (t->tm_min * 60 + t->tm_sec) % s.period;
+  bool live = false;
   for (int i = 0; i < N_PHASES; i++) {
-    if (remaining <= PHASES[i].window) {
-      window = PHASES[i].window; step = PHASES[i].step; prev = i ? PHASES[i - 1].window : 0;
+    if (ph.remaining <= PHASES[i].from) {
+      ph.step = PHASES[i].step; ph.from = PHASES[i].from;
+      ph.cells = (PHASES[i].from - PHASES[i].to) / ph.step;
+      ph.next = i ? PHASES[i - 1].from : 0;
+      live = PHASES[i].live;
       break;
     }
   }
-  if (remaining_out)   *remaining_out = remaining;
-  if (window_out)      *window_out = window;
-  if (prev_window_out) *prev_window_out = prev;
-  return step;
+  ph.filled = (ph.from - ph.remaining) / ph.step + (live ? 1 : 0);
+  return ph;
 }
 
 /* =========================== text helpers =========================== */
@@ -166,10 +197,10 @@ static const uint16_t WX16[3][16] = {
   },
 };
 
-static void draw_weather_icon(GContext *ctx, GPoint o, int sz, int cond, GColor ink) {
-  if (cond < 0 || cond > 2) cond = 1;
-  const uint16_t *rows = sz >= 16 ? WX16[cond] : WX12[cond];
-  int n = sz >= 16 ? 16 : 12;
+static const uint16_t BOLT12[12] = { 0x0000, 0x01C0, 0x00E0, 0x0070, 0x0038, 0x03FC, 0x01FC, 0x00E0, 0x0070, 0x0038, 0x000C, 0x0000 };   // charging
+static const uint16_t BOLT16[16] = { 0x0000, 0x1E00, 0x0F00, 0x0780, 0x03C0, 0x01E0, 0x3FF0, 0x1FF8, 0x0FF8, 0x0780, 0x03C0, 0x01E0, 0x00F0, 0x0030, 0x0008, 0x0000 };
+
+static void draw_pixel_icon(GContext *ctx, GPoint o, const uint16_t *rows, int n, GColor ink) {
   graphics_context_set_fill_color(ctx, ink);
   for (int y = 0; y < n; y++) {
     for (int x = 0; x < n; ) {   // one rect per horizontal run
@@ -180,6 +211,12 @@ static void draw_weather_icon(GContext *ctx, GPoint o, int sz, int cond, GColor 
       x = x1;
     }
   }
+}
+
+static void draw_weather_icon(GContext *ctx, GPoint o, int sz, int cond, GColor ink) {
+  if (cond < 0 || cond > 2) cond = 1;
+  if (sz >= 16) draw_pixel_icon(ctx, o, WX16[cond], 16, ink);
+  else          draw_pixel_icon(ctx, o, WX12[cond], 12, ink);
 }
 
 static void draw_heart(GContext *ctx, GPoint o, int sz, GColor c) {
@@ -259,28 +296,34 @@ static void module_info(int mod, struct tm *t, Mod *m) {
   }
 }
 
-static int draw_module_icon(GContext *ctx, int mod, GPoint o, Theme *th) {
+static int draw_module_icon(GContext *ctx, int mod, GPoint o, Theme *th, GColor ink) {
   switch (mod) {
-    case MOD_WEATHER: draw_weather_icon(ctx, o, ICON, s_have_weather ? s_cond : 1, th->text); return ICON;
+    case MOD_WEATHER: draw_weather_icon(ctx, o, ICON, s_have_weather ? s_cond : 1, ink);     return ICON;
     case MOD_HEART:   draw_heart(ctx, GPoint(o.x, o.y + 1), ICON - 1, th->heart);              return ICON;
-    case MOD_BATTERY: draw_battery(ctx, o, ICON, battery_state_service_peek().charge_percent, th->text); return ICON;
-    case MOD_STEPS:   draw_steps(ctx, o, ICON, th->text);                                      return ICON;
+    case MOD_BATTERY: {
+      BatteryChargeState b = battery_state_service_peek();
+      if (b.is_charging) { if (ICON >= 16) draw_pixel_icon(ctx, o, BOLT16, 16, ink); else draw_pixel_icon(ctx, o, BOLT12, 12, ink); }
+      else draw_battery(ctx, o, ICON, b.charge_percent, ink);
+      return ICON;
+    }
+    case MOD_STEPS:   draw_steps(ctx, o, ICON, ink);                                           return ICON;
     case MOD_BT_OFF:  draw_bt_off(ctx, o, ICON, th->accent);                                   return ICON;
     default:          return 0;
   }
 }
 
-// Header cell: icon + value, vertically centred.
-static void draw_header_cell(GContext *ctx, int mod, int x, int w, struct tm *t, Theme *th) {
+// Header cell: icon + value, vertically centred. Alerts (low battery) draw in the accent colour.
+static void draw_header_cell(GContext *ctx, int mod, int x, int w, struct tm *t, Theme *th, bool alert) {
   if (mod == MOD_NONE) return;
   Mod m; module_info(mod, t, &m);
-  int iw = draw_module_icon(ctx, mod, GPoint(x + PAD, (HEADER_H - ICON) / 2), th);
+  GColor ink = alert ? th->accent : th->text;
+  int iw = draw_module_icon(ctx, mod, GPoint(x + PAD, (HEADER_H - ICON) / 2), th, ink);
   int tx = x + PAD + (iw ? iw + 5 : 0);
   GFont f = HEADER_FONT;
 #if defined(HEADER_FALLBACK)
   if (text_size(m.value, f).w > x + w - tx) f = HEADER_FALLBACK;   // "100%" etc. drop back rather than truncate
 #endif
-  draw_text_vcenter(ctx, m.value, f, tx, x + w - tx, 0, HEADER_H, GTextAlignmentLeft, th->text);
+  draw_text_vcenter(ctx, m.value, f, tx, x + w - tx, 0, HEADER_H, GTextAlignmentLeft, ink);
 }
 
 // Bottom cell: small label at top, large value at the bottom.
@@ -305,12 +348,12 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   GRect b    = layer_get_unobstructed_bounds(layer);   // shrinks when a timeline quick view is showing
   bool compact = b.size.h < full.size.h - 8;
   int W = b.size.w, H = b.size.h;
-  Theme th = theme();
 
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
-  int remaining, window;
-  int step = current_phase(t, &remaining, &window, NULL);
+  Theme th = theme(t);
+  Phase ph = current_phase(t);
+  int remaining = ph.remaining, step = ph.step;
   bool show_sec = step < 60;
   char buf[16];
 
@@ -329,20 +372,36 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   if (!compact) graphics_fill_rect(ctx, GRect(0, rule2_y, W, RULE), 0, GCornerNone);
 
   /* header modules */
-  draw_header_cell(ctx, s.slot[0], 0, half, t, &th);
-  int top_right = (!s_connected && s.bt_icon) ? MOD_BT_OFF : s.slot[1];
-  draw_header_cell(ctx, top_right, half + RULE, W - half - RULE, t, &th);
+  // A low battery takes the top-right slot unless the battery is already showing; a lost phone
+  // connection takes top-right too, or top-left if the battery warning is already there.
+  BatteryChargeState batt = battery_state_service_peek();
+  bool low = s.low_batt && !batt.is_charging && batt.charge_percent <= 20;
+  int tl = s.slot[0], tr = s.slot[1];
+  if (low && tl != MOD_BATTERY && tr != MOD_BATTERY) tr = MOD_BATTERY;
+  if (!s_connected && s.bt_icon) {
+    if (low && tr == MOD_BATTERY) tl = MOD_BT_OFF; else tr = MOD_BT_OFF;
+  }
+  draw_header_cell(ctx, tl, 0, half, t, &th, low && tl == MOD_BATTERY);
+  draw_header_cell(ctx, tr, half + RULE, W - half - RULE, t, &th, low && tr == MOD_BATTERY);
 
   /* time */
   int area_y = HEADER_H + RULE;
-  strftime(buf, sizeof buf, clock_is_24h_style() ? "%H:%M" : "%I:%M", t);
+  bool h24 = s.clock ? s.clock == 24 : clock_is_24h_style();
+  strftime(buf, sizeof buf, h24 ? "%H:%M" : "%I:%M", t);
   if (!s.lead_zero && buf[0] == '0') memmove(buf, buf + 1, strlen(buf));
   GSize ts = text_size(buf, s_font_time);
   int time_y = area_y + TIME_TOP - SZ_TIME / 5;
   draw_text(ctx, buf, s_font_time, GRect(PAD, time_y, W - 2 * PAD, ts.h + 2), GTextAlignmentLeft, th.time);
 
-  if (show_sec) {
-    snprintf(buf, sizeof buf, "%02d", (t->tm_sec / step) * step);
+  // AM/PM tucks into the top-right corner of the time; the last-minute seconds take the bottom.
+  if (!h24) {
+    int ap_y = area_y + TIME_TOP + (SZ_TIME - 40) / 7;   // +2px on emery to meet the taller digits
+    draw_text(ctx, t->tm_hour < 12 ? "AM" : "PM", s_font_label, GRect(PAD + ts.w + 5, ap_y, W, 20), GTextAlignmentLeft, th.label);
+  }
+
+  // Ticking seconds only for the final 10; the 5-second stretch before it redraws every 5s.
+  if (step == 1) {
+    snprintf(buf, sizeof buf, "%02d", t->tm_sec);
     GSize ss = text_size(buf, s_font_mid);
     int sec_y = time_y + (ts.h - ss.h) - (SZ_TIME - SZ_MID) / 5;
     draw_text(ctx, buf, s_font_mid, GRect(PAD + ts.w + 5, sec_y, W, ss.h + 2), GTextAlignmentLeft, th.accent);
@@ -357,26 +416,28 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   int bar_w = ((W - 2 * PAD + 1) / 60) * 60 - 1;
   int bar_x = (W - bar_w) / 2;
 
-  const char *mode = step == 60 ? "MINUTE" : step == 15 ? "15 SEC" : step == 3 ? "3 SEC" : "SECONDS";
+  const char *mode = step == 60 ? "MINUTE" : step == 5 ? "5 SEC" : "SECONDS";
   draw_text(ctx, mode, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentLeft, th.text);
 
   int target_min = ((t->tm_min * 60 + t->tm_sec + remaining) / 60) % 60;
-  if (show_sec) snprintf(buf, sizeof buf, ":%02d IN %d:%02d", target_min, remaining / 60, remaining % 60);
+  int shown = (remaining + step - 1) / step * step;   // whole 5s in the 5-second stretch, so it's never stale
+  if (show_sec) snprintf(buf, sizeof buf, ":%02d IN %d:%02d", target_min, shown / 60, shown % 60);
   else          snprintf(buf, sizeof buf, ":%02d IN %dM",     target_min, (remaining + 59) / 60);
   draw_text(ctx, buf, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentRight, th.accent);
 
-  int cells  = window / step;
-  int filled = (window - remaining) / step;
+  int cells  = ph.cells;
+  int filled = ph.filled;
   GColor fill_c = show_sec ? th.accent : th.bar;
   int pitch  = (bar_w + 1) / cells;
+  bar_x += (bar_w + 1 - pitch * cells) / 2;   // only matters if a count that doesn't divide 60 is ever added
 
-  // The 10-minute run-up is drawn as dots so it reads differently from the full-period bar.
-  if (step == 60 && window < s.period) {
+  // Dots mean "the final ten": white minutes in the run-up, red seconds at the very end.
+  if (step == 1 || (step == 60 && ph.from < s.period)) {
     int r = BAR_H / 2 + 1;
     for (int i = 0; i < cells; i++) {
       GPoint c = GPoint(bar_x + i * pitch + (pitch - 1) / 2, bar_y + BAR_H / 2);
       if (i < filled) {
-        graphics_context_set_fill_color(ctx, th.bar);
+        graphics_context_set_fill_color(ctx, fill_c);
         graphics_fill_circle(ctx, c, r);
       } else {
 #if defined(PBL_COLOR)
@@ -427,9 +488,13 @@ static void redraw(void) { layer_mark_dirty(s_canvas); }
 static void schedule_timer(void);
 
 static void check_vibe(struct tm *t) {
-  int remaining;
-  current_phase(t, &remaining, NULL, NULL);
-  if (remaining > 60) { s_vibed = false; return; }
+  // Double buzz at the mark itself; remember which mark so a timer and the minute tick can't both fire it.
+  static time_t last_mark;
+  int into = (t->tm_min * 60 + t->tm_sec) % s.period;
+  time_t mark = time(NULL) - into;
+  if (s.mark_vibe && into < 3 && mark != last_mark) { last_mark = mark; vibes_double_pulse(); }
+
+  if (current_phase(t).remaining > 60) { s_vibed = false; return; }
   if (s.vibe && !s_vibed) { vibes_short_pulse(); s_vibed = true; }
 }
 
@@ -448,12 +513,12 @@ static void schedule_timer(void) {
   time_t sec; uint16_t ms;
   time_ms(&sec, &ms);
   struct tm *t = localtime(&sec);
-  int remaining, prev_window;
-  int step = current_phase(t, &remaining, NULL, &prev_window);
-  if (step >= 60) return;
-  int target = remaining - (remaining % step ? remaining % step : step);   // next segment edge
-  if (target < prev_window) target = prev_window;                           // or next phase start
-  int wait = (remaining - target) * 1000 - ms + 20;
+  Phase ph = current_phase(t);
+  if (ph.step >= 60) return;
+  int r = ph.remaining;
+  int target = r - (r % ph.step ? r % ph.step : ph.step);   // next segment edge
+  if (target < ph.next) target = ph.next;                    // or next phase start
+  int wait = (r - target) * 1000 - ms + 20;
   s_timer = app_timer_register(wait, timer_cb, NULL);
 }
 
@@ -516,6 +581,18 @@ static void inbox_cb(DictionaryIterator *it, void *ctx) {
   if ((tp = dict_find(it, MESSAGE_KEY_BT_VIBE))) { s.bt_vibe = tuple_int(tp, 10) != 0; settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_BT_ICON))) { s.bt_icon = tuple_int(tp, 10) != 0; settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_LEADING_ZERO))) { s.lead_zero = tuple_int(tp, 10) != 0; settings_changed = true; }
+  if ((tp = dict_find(it, MESSAGE_KEY_CLOCK))) { s.clock = tuple_int(tp, 10); settings_changed = true; }
+  if ((tp = dict_find(it, MESSAGE_KEY_AUTO_THEME)))  { s.auto_theme  = tuple_int(tp, 10) != 0; settings_changed = true; }
+  if ((tp = dict_find(it, MESSAGE_KEY_DAY_START)))   { s.day_start   = tuple_int(tp, 10); settings_changed = true; }
+  if ((tp = dict_find(it, MESSAGE_KEY_NIGHT_START))) { s.night_start = tuple_int(tp, 10); settings_changed = true; }
+  if ((tp = dict_find(it, MESSAGE_KEY_MARK_VIBE)))   { s.mark_vibe   = tuple_int(tp, 10) != 0; settings_changed = true; }
+  if ((tp = dict_find(it, MESSAGE_KEY_LOW_BATT)))    { s.low_batt    = tuple_int(tp, 10) != 0; settings_changed = true; }
+  if ((tp = dict_find(it, MESSAGE_KEY_DAY_ACCENT)))  { s.day_accent  = tuple_int(tp, 16); settings_changed = true; }
+  const uint32_t day_keys[C_COUNT] = { MESSAGE_KEY_DAY_COLOR_BG, MESSAGE_KEY_DAY_COLOR_TIME, MESSAGE_KEY_DAY_COLOR_TEXT,
+    MESSAGE_KEY_DAY_COLOR_LABEL, MESSAGE_KEY_DAY_COLOR_RULE, MESSAGE_KEY_DAY_COLOR_BAR, MESSAGE_KEY_DAY_COLOR_EMPTY, MESSAGE_KEY_DAY_COLOR_HEART };
+  for (int i = 0; i < C_COUNT; i++) {
+    if ((tp = dict_find(it, day_keys[i]))) { s.day_color[i] = tuple_int(tp, 16); settings_changed = true; }
+  }
   const uint32_t color_keys[C_COUNT] = { MESSAGE_KEY_COLOR_BG, MESSAGE_KEY_COLOR_TIME, MESSAGE_KEY_COLOR_TEXT,
     MESSAGE_KEY_COLOR_LABEL, MESSAGE_KEY_COLOR_RULE, MESSAGE_KEY_COLOR_BAR, MESSAGE_KEY_COLOR_EMPTY, MESSAGE_KEY_COLOR_HEART };
   for (int i = 0; i < C_COUNT; i++) {
@@ -533,6 +610,14 @@ static void inbox_cb(DictionaryIterator *it, void *ctx) {
     persist_write_bool(P_BT_VIBE, s.bt_vibe);
     persist_write_bool(P_BT_ICON, s.bt_icon);
     persist_write_bool(P_LEAD_ZERO, s.lead_zero);
+    persist_write_int(P_CLOCK, s.clock);
+    persist_write_bool(P_AUTO_THEME, s.auto_theme);
+    persist_write_int(P_DAY_START, s.day_start);
+    persist_write_int(P_NIGHT_START, s.night_start);
+    persist_write_data(P_DAY_COLORS, s.day_color, sizeof s.day_color);
+    persist_write_int(P_DAY_ACCENT, s.day_accent);
+    persist_write_bool(P_MARK_VIBE, s.mark_vibe);
+    persist_write_bool(P_LOW_BATT, s.low_batt);
     if (s_timer) { app_timer_cancel(s_timer); s_timer = NULL; }
     schedule_timer();
   }
@@ -550,6 +635,14 @@ static void load_settings(void) {
   if (persist_exists(P_BT_VIBE))   s.bt_vibe   = persist_read_bool(P_BT_VIBE);
   if (persist_exists(P_BT_ICON))   s.bt_icon   = persist_read_bool(P_BT_ICON);
   if (persist_exists(P_LEAD_ZERO)) s.lead_zero = persist_read_bool(P_LEAD_ZERO);
+  if (persist_exists(P_CLOCK))     s.clock     = persist_read_int(P_CLOCK);
+  if (persist_exists(P_AUTO_THEME))  s.auto_theme  = persist_read_bool(P_AUTO_THEME);
+  if (persist_exists(P_DAY_START))   s.day_start   = persist_read_int(P_DAY_START);
+  if (persist_exists(P_NIGHT_START)) s.night_start = persist_read_int(P_NIGHT_START);
+  if (persist_exists(P_DAY_COLORS))  persist_read_data(P_DAY_COLORS, s.day_color, sizeof s.day_color);
+  if (persist_exists(P_DAY_ACCENT))  s.day_accent  = persist_read_int(P_DAY_ACCENT);
+  if (persist_exists(P_MARK_VIBE))   s.mark_vibe   = persist_read_bool(P_MARK_VIBE);
+  if (persist_exists(P_LOW_BATT))    s.low_batt    = persist_read_bool(P_LOW_BATT);
   if (s.period != 3600) s.period = 1800;
 }
 
@@ -573,6 +666,8 @@ static void connection_change(bool connected) {
   redraw();
 }
 
+static void battery_change(BatteryChargeState state) { redraw(); }
+
 static void unobstructed_change(AnimationProgress progress, void *ctx) { redraw(); }
 
 /* ============================== window ============================== */
@@ -593,7 +688,7 @@ static void init(void) {
   s_font_time  = fonts_load_custom_font(resource_get_handle(RES_TIME));
   s_font_mid   = fonts_load_custom_font(resource_get_handle(RES_MID));
   s_font_small = fonts_load_custom_font(resource_get_handle(RES_SMALL));
-  s_font_label = fonts_load_custom_font(resource_get_handle(RES_LABEL));
+  s_font_label = fonts_get_system_font(LABEL_FONT);
 #if defined(RES_HEADER)
   s_font_header = fonts_load_custom_font(resource_get_handle(RES_HEADER));
 #endif
@@ -612,13 +707,14 @@ static void init(void) {
   window_stack_push(s_window, true);
 
   app_message_register_inbox_received(inbox_cb);
-  app_message_open(512, 64);   // a full settings save is ~22 keys
+  app_message_open(1024, 64);   // a full settings save is ~40 keys
 
   refresh_health();
   tick_timer_service_subscribe(MINUTE_UNIT, minute_tick);
   unobstructed_area_service_subscribe((UnobstructedAreaHandlers){ .change = unobstructed_change }, NULL);
   s_connected = connection_service_peek_pebble_app_connection();
   connection_service_subscribe((ConnectionHandlers){ .pebble_app_connection_handler = connection_change });
+  battery_state_service_subscribe(battery_change);
   schedule_timer();
 }
 
@@ -627,12 +723,12 @@ static void deinit(void) {
   tick_timer_service_unsubscribe();
   unobstructed_area_service_unsubscribe();
   connection_service_unsubscribe();
+  battery_state_service_unsubscribe();
   window_destroy(s_window);
   gpath_destroy(s_heart_tri);
   fonts_unload_custom_font(s_font_time);
   fonts_unload_custom_font(s_font_mid);
   fonts_unload_custom_font(s_font_small);
-  fonts_unload_custom_font(s_font_label);
 #if defined(RES_HEADER)
   fonts_unload_custom_font(s_font_header);
 #endif
