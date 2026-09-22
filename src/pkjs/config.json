@@ -363,6 +363,18 @@
         "label": "Icons instead of captions",
         "description": "The bottom row shows symbols (and the date in a little calendar) instead of DAY / DATE / MONTH. Symbols always show while a notification covers the bottom of the screen.",
         "defaultValue": false
+      },
+      {
+        "type": "select",
+        "messageKey": "DATE_STYLE",
+        "label": "Date style",
+        "defaultValue": "0",
+        "description": "How the date shows alongside symbols: while a notification covers the bottom, or with icons instead of captions.",
+        "options": [
+          { "label": "Number", "value": "0" },
+          { "label": "Calendar icon", "value": "1" },
+          { "label": "Calendar frame", "value": "2" }
+        ]
       }
     ]
   },

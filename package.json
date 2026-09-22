@@ -1,7 +1,7 @@
 {
   "name": "approach",
   "author": "Bus driver",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "keywords": ["pebble-app"],
   "private": true,
   "dependencies": {
@@ -25,7 +25,7 @@
       "COLOR_BG", "COLOR_TIME", "COLOR_TEXT", "COLOR_LABEL", "COLOR_RULE", "COLOR_BAR", "COLOR_EMPTY", "COLOR_HEART",
       "BT_VIBE", "BT_ICON", "LEADING_ZERO", "CLOCK",
       "AUTO_THEME", "DAY_START", "NIGHT_START", "MARK_VIBE", "LOW_BATT", "DAY_ACCENT",
-      "DAY_COLOR_BG", "DAY_COLOR_TIME", "DAY_COLOR_TEXT", "DAY_COLOR_LABEL", "DAY_COLOR_RULE", "DAY_COLOR_BAR", "DAY_COLOR_EMPTY", "DAY_COLOR_HEART", "BOTTOM_ICONS"
+      "DAY_COLOR_BG", "DAY_COLOR_TIME", "DAY_COLOR_TEXT", "DAY_COLOR_LABEL", "DAY_COLOR_RULE", "DAY_COLOR_BAR", "DAY_COLOR_EMPTY", "DAY_COLOR_HEART", "BOTTOM_ICONS", "DATE_STYLE"
     ],
     "resources": {
       "media": [

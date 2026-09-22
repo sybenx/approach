@@ -54,7 +54,7 @@ enum { C_BG, C_TIME, C_TEXT, C_LABEL, C_RULE, C_BAR, C_EMPTY, C_HEART, C_COUNT }
 // persist keys
 enum { P_TEMP = 1, P_COND, P_THEME = 10, P_ACCENT, P_SLOT_TL, P_SLOT_TR, P_SLOT_B1, P_SLOT_B2, P_SLOT_B3, P_PERIOD, P_VIBE,
        P_COLORS, P_BT_VIBE, P_BT_ICON, P_LEAD_ZERO, P_CLOCK,
-       P_DAY_COLORS, P_DAY_ACCENT, P_AUTO_THEME, P_DAY_START, P_NIGHT_START, P_MARK_VIBE, P_LOW_BATT, P_BOTTOM_ICONS };
+       P_DAY_COLORS, P_DAY_ACCENT, P_AUTO_THEME, P_DAY_START, P_NIGHT_START, P_MARK_VIBE, P_LOW_BATT, P_BOTTOM_ICONS, P_DATE_STYLE };
 
 static struct {
   int  theme;        // 1 dark, 0 light
@@ -74,9 +74,10 @@ static struct {
   bool mark_vibe;    // double buzz at :00 / :30
   bool low_batt;     // take over the top-right slot when the battery is low
   bool bottom_icons; // symbols instead of DAY / DATE / MONTH captions in the bottom row
+  int  date_style;   // 0 plain number, 1 calendar icon, 2 number inside a calendar frame
 } s = { 1, 0xFF0000, { MOD_WEATHER, MOD_HEART, MOD_DAY, MOD_DATE, MOD_MONTH }, 1800, false,
         { -1, -1, -1, -1, -1, -1, -1, -1 }, false, true, false, 0,
-        false, 7, 19, { -1, -1, -1, -1, -1, -1, -1, -1 }, 0xFF0000, false, true, false };
+        false, 7, 19, { -1, -1, -1, -1, -1, -1, -1, -1 }, 0xFF0000, false, true, false, 0 };
 
 typedef struct { GColor bg, time, text, label, rule, bar, empty, accent, heart; } Theme;
 
@@ -357,22 +358,25 @@ static void draw_framed_date(GContext *ctx, const char *text, GFont f, int sz, G
   draw_text(ctx, text, f, GRect(fx, box_y, fw, ts.h + 2), GTextAlignmentCenter, ink);
 }
 
-// Symbols that can stand in for a caption. Day and month names explain themselves.
+// Symbols that can stand in for a caption. Day and month names explain themselves, and the date
+// is a plain number unless the date style asks for the calendar icon.
 static bool has_symbol(int mod) {
+  if (mod == MOD_DATE) return s.date_style == 1;
   return mod != MOD_NONE && mod != MOD_DAY && mod != MOD_MONTH;
 }
 
 // Bottom cell. Full height: caption (words, or a symbol with the bottom_icons setting) at the top,
 // large value at the bottom. Compact (a quick view is showing, captions gone): symbols always,
 // inline before the value; the value drops to the small font to make room, and the symbol only
-// gives way when even that won't fit (4-digit steps). With symbols on, the date sits in a calendar.
+// gives way when even that won't fit (4-digit steps). The calendar-frame date style replaces the
+// date's caption and value with the number inside a calendar wherever symbols are showing.
 static void draw_bottom_cell(GContext *ctx, int mod, int x, int w, int top, int H, struct tm *t, Theme *th, bool accent, bool compact) {
   if (mod == MOD_NONE) return;
   Mod m; module_info(mod, t, &m);
   GColor ink = accent ? th->accent : th->text;
   bool symbols = compact || s.bottom_icons;
 
-  if (mod == MOD_DATE && symbols) {
+  if (mod == MOD_DATE && symbols && s.date_style == 2) {
     GFont f = compact ? s_font_small : s_font_mid;
     draw_framed_date(ctx, m.value, f, compact ? SZ_SMALL : SZ_MID, GRect(x, top, w, H - top), ink);
     return;
@@ -658,6 +662,7 @@ static void inbox_cb(DictionaryIterator *it, void *ctx) {
   if ((tp = dict_find(it, MESSAGE_KEY_MARK_VIBE)))   { s.mark_vibe   = tuple_int(tp, 10) != 0; settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_LOW_BATT)))    { s.low_batt    = tuple_int(tp, 10) != 0; settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_BOTTOM_ICONS))) { s.bottom_icons = tuple_int(tp, 10) != 0; settings_changed = true; }
+  if ((tp = dict_find(it, MESSAGE_KEY_DATE_STYLE)))   { s.date_style   = tuple_int(tp, 10); settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_DAY_ACCENT)))  { s.day_accent  = tuple_int(tp, 16); settings_changed = true; }
   const uint32_t day_keys[C_COUNT] = { MESSAGE_KEY_DAY_COLOR_BG, MESSAGE_KEY_DAY_COLOR_TIME, MESSAGE_KEY_DAY_COLOR_TEXT,
     MESSAGE_KEY_DAY_COLOR_LABEL, MESSAGE_KEY_DAY_COLOR_RULE, MESSAGE_KEY_DAY_COLOR_BAR, MESSAGE_KEY_DAY_COLOR_EMPTY, MESSAGE_KEY_DAY_COLOR_HEART };
@@ -690,6 +695,7 @@ static void inbox_cb(DictionaryIterator *it, void *ctx) {
     persist_write_bool(P_MARK_VIBE, s.mark_vibe);
     persist_write_bool(P_LOW_BATT, s.low_batt);
     persist_write_bool(P_BOTTOM_ICONS, s.bottom_icons);
+    persist_write_int(P_DATE_STYLE, s.date_style);
     if (s_timer) { app_timer_cancel(s_timer); s_timer = NULL; }
     schedule_timer();
   }
@@ -716,6 +722,7 @@ static void load_settings(void) {
   if (persist_exists(P_MARK_VIBE))   s.mark_vibe   = persist_read_bool(P_MARK_VIBE);
   if (persist_exists(P_LOW_BATT))    s.low_batt    = persist_read_bool(P_LOW_BATT);
   if (persist_exists(P_BOTTOM_ICONS)) s.bottom_icons = persist_read_bool(P_BOTTOM_ICONS);
+  if (persist_exists(P_DATE_STYLE))   s.date_style   = persist_read_int(P_DATE_STYLE);
   if (s.period != 3600) s.period = 1800;
 }
 
