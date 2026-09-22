@@ -15,7 +15,8 @@
   #define RES_LABEL  RESOURCE_ID_FONT_SB_11
   #define SZ_TIME    54
   #define SZ_MID     22
-  #define HEADER_FONT s_font_small
+  #define RES_HEADER RESOURCE_ID_FONT_XB_18   // 15px read as tiny on this display
+  #define HEADER_FALLBACK s_font_small
 #else                                     // 144 x 168 watches
   #define HEADER_H   25
   #define DATE_H     46
@@ -82,6 +83,10 @@ static Theme theme(void) {
 static Window   *s_window;
 static Layer    *s_canvas;
 static GFont     s_font_time, s_font_mid, s_font_small, s_font_label;
+#if defined(RES_HEADER)
+static GFont     s_font_header;
+#define HEADER_FONT s_font_header
+#endif
 static AppTimer *s_timer;
 static GPath    *s_heart_tri;
 static GPoint    s_heart_pts[3];
@@ -271,7 +276,11 @@ static void draw_header_cell(GContext *ctx, int mod, int x, int w, struct tm *t,
   Mod m; module_info(mod, t, &m);
   int iw = draw_module_icon(ctx, mod, GPoint(x + PAD, (HEADER_H - ICON) / 2), th);
   int tx = x + PAD + (iw ? iw + 5 : 0);
-  draw_text_vcenter(ctx, m.value, HEADER_FONT, tx, x + w - tx, 0, HEADER_H, GTextAlignmentLeft, th->text);
+  GFont f = HEADER_FONT;
+#if defined(HEADER_FALLBACK)
+  if (text_size(m.value, f).w > x + w - tx) f = HEADER_FALLBACK;   // "100%" etc. drop back rather than truncate
+#endif
+  draw_text_vcenter(ctx, m.value, f, tx, x + w - tx, 0, HEADER_H, GTextAlignmentLeft, th->text);
 }
 
 // Bottom cell: small label at top, large value at the bottom.
@@ -343,24 +352,48 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   int bar_y   = rule2_y - PAD - BAR_H;
   int label_h = text_size("0", s_font_label).h;
   int label_y = bar_y - 4 - label_h;
+  // Every segment count (60, 30, 10, 5, 4) divides 60, so a bar whose width plus one gap is a
+  // multiple of 60 splits into whole, identical pixels in every phase. Labels line up with its ends.
+  int bar_w = ((W - 2 * PAD + 1) / 60) * 60 - 1;
+  int bar_x = (W - bar_w) / 2;
 
   const char *mode = step == 60 ? "MINUTE" : step == 15 ? "15 SEC" : step == 3 ? "3 SEC" : "SECONDS";
-  draw_text(ctx, mode, s_font_label, GRect(PAD, label_y, W - 2 * PAD, label_h + 2), GTextAlignmentLeft, th.text);
+  draw_text(ctx, mode, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentLeft, th.text);
 
   int target_min = ((t->tm_min * 60 + t->tm_sec + remaining) / 60) % 60;
   if (show_sec) snprintf(buf, sizeof buf, ":%02d IN %d:%02d", target_min, remaining / 60, remaining % 60);
   else          snprintf(buf, sizeof buf, ":%02d IN %dM",     target_min, (remaining + 59) / 60);
-  draw_text(ctx, buf, s_font_label, GRect(PAD, label_y, W - 2 * PAD, label_h + 2), GTextAlignmentRight, th.accent);
+  draw_text(ctx, buf, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentRight, th.accent);
 
   int cells  = window / step;
   int filled = (window - remaining) / step;
   GColor fill_c = show_sec ? th.accent : th.bar;
-  int bar_w = W - 2 * PAD;
+  int pitch  = (bar_w + 1) / cells;
+
+  // The 10-minute run-up is drawn as dots so it reads differently from the full-period bar.
+  if (step == 60 && window < s.period) {
+    int r = BAR_H / 2 + 1;
+    for (int i = 0; i < cells; i++) {
+      GPoint c = GPoint(bar_x + i * pitch + (pitch - 1) / 2, bar_y + BAR_H / 2);
+      if (i < filled) {
+        graphics_context_set_fill_color(ctx, th.bar);
+        graphics_fill_circle(ctx, c, r);
+      } else {
+#if defined(PBL_COLOR)
+        graphics_context_set_fill_color(ctx, th.empty);
+        graphics_fill_circle(ctx, c, r);
+#else
+        graphics_context_set_stroke_color(ctx, th.bar);
+        graphics_context_set_stroke_width(ctx, 1);
+        graphics_draw_circle(ctx, c, r);
+#endif
+      }
+    }
+    cells = 0;
+  }
+
   for (int i = 0; i < cells; i++) {
-    int x0 = PAD + (i * (bar_w + 1)) / cells;
-    int x1 = PAD + ((i + 1) * (bar_w + 1)) / cells - 1;
-    if (x1 <= x0) x1 = x0 + 1;
-    GRect cell = GRect(x0, bar_y, x1 - x0, BAR_H);
+    GRect cell = GRect(bar_x + i * pitch, bar_y, pitch - 1, BAR_H);
     if (i < filled) {
       graphics_context_set_fill_color(ctx, fill_c);
       graphics_fill_rect(ctx, cell, 0, GCornerNone);
@@ -561,6 +594,9 @@ static void init(void) {
   s_font_mid   = fonts_load_custom_font(resource_get_handle(RES_MID));
   s_font_small = fonts_load_custom_font(resource_get_handle(RES_SMALL));
   s_font_label = fonts_load_custom_font(resource_get_handle(RES_LABEL));
+#if defined(RES_HEADER)
+  s_font_header = fonts_load_custom_font(resource_get_handle(RES_HEADER));
+#endif
 
   int hs = ICON - 1;
   s_heart_pts[0] = GPoint(hs * 6 / 100,  hs * 42 / 100);
@@ -597,6 +633,9 @@ static void deinit(void) {
   fonts_unload_custom_font(s_font_mid);
   fonts_unload_custom_font(s_font_small);
   fonts_unload_custom_font(s_font_label);
+#if defined(RES_HEADER)
+  fonts_unload_custom_font(s_font_header);
+#endif
 }
 
 int main(void) {

@@ -1,7 +1,7 @@
 {
   "name": "approach",
   "author": "Bus driver",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "keywords": ["pebble-app"],
   "private": true,
   "dependencies": {
@@ -29,6 +29,7 @@
       "media": [
         { "type": "font", "name": "FONT_XB_54", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9:]",        "targetPlatforms": ["emery"] },
         { "type": "font", "name": "FONT_XB_22", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z°%-]",   "targetPlatforms": ["emery"] },
+        { "type": "font", "name": "FONT_XB_18", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z°%-]",   "targetPlatforms": ["emery"] },
         { "type": "font", "name": "FONT_XB_15", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z°%-]",   "targetPlatforms": ["emery"] },
         { "type": "font", "name": "FONT_SB_11", "file": "fonts/Archivo-SemiBold.ttf",  "characterRegex": "[0-9A-Z :]",    "targetPlatforms": ["emery"] },
 
