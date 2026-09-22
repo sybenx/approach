@@ -136,37 +136,43 @@ static void draw_text_vcenter(GContext *ctx, const char *str, GFont f, int x, in
 static void upper(char *p) { for (; *p; p++) if (*p >= 'a' && *p <= 'z') *p -= 32; }
 
 /* ============================== icons =============================== */
-static void draw_cloud(GContext *ctx, int x, int bottom, int sz) {
-  graphics_fill_circle(ctx, GPoint(x + sz * 6 / 10, bottom - sz * 42 / 100), sz * 28 / 100);
-  graphics_fill_circle(ctx, GPoint(x + sz * 32 / 100, bottom - sz * 30 / 100), sz * 20 / 100);
-  graphics_fill_rect(ctx, GRect(x + sz * 12 / 100, bottom - sz * 30 / 100, sz * 78 / 100, sz * 30 / 100), 2, GCornersAll);
-}
-
-static void draw_sun(GContext *ctx, GPoint c, int r, int ray_from, int ray_to, int rays) {
-  graphics_fill_circle(ctx, c, r);
-  for (int i = 0; i < rays; i++) {
-    int32_t a = TRIG_MAX_ANGLE * i / rays;
-    int32_t sx = sin_lookup(a), sy = -cos_lookup(a);
-    graphics_draw_line(ctx,
-      GPoint(c.x + sx * ray_from / TRIG_MAX_RATIO, c.y + sy * ray_from / TRIG_MAX_RATIO),
-      GPoint(c.x + sx * ray_to   / TRIG_MAX_RATIO, c.y + sy * ray_to   / TRIG_MAX_RATIO));
-  }
-}
+// Weather icons as pixel art, one bit per pixel (bit 0 = leftmost column), indexed by cond.
+// Hand-drawn per size because shapes built from circles turn to mush at 12px.
+static const uint16_t WX12[3][12] = {
+  { // sun
+    0x0060, 0x0462, 0x0204, 0x00F0, 0x01F8, 0x0DFB, 0x0DFB, 0x01F8, 0x00F0, 0x0204, 0x0462, 0x0060
+  },
+  { // cloud_sun
+    0x0080, 0x0410, 0x01C0, 0x03E0, 0x0BE0, 0x0380, 0x0038, 0x00FE, 0x01FF, 0x01FF, 0x00FE, 0x0000
+  },
+  { // rain
+    0x0000, 0x0070, 0x01FC, 0x03FE, 0x07FF, 0x07FF, 0x03FE, 0x0000, 0x0444, 0x0444, 0x0222, 0x0000
+  },
+};
+static const uint16_t WX16[3][16] = {
+  { // sun
+    0x0180, 0x0180, 0x300C, 0x300C, 0x03C0, 0x07E0, 0x0FF0, 0xCFF3, 0xCFF3, 0x0FF0, 0x07E0, 0x03C0, 0x300C, 0x300C, 0x0180, 0x0180
+  },
+  { // cloud_sun
+    0x0400, 0x4440, 0x2080, 0x0E00, 0x1F00, 0xDF60, 0x1F00, 0x2E00, 0x40F0, 0x03FC, 0x07FE, 0x0FFF, 0x0FFF, 0x0FFF, 0x07FE, 0x0000
+  },
+  { // rain
+    0x0000, 0x01F0, 0x1FFC, 0x3FFE, 0x7FFF, 0x7FFF, 0x7FFF, 0x3FFE, 0x0000, 0x2108, 0x2108, 0x1084, 0x1084, 0x0842, 0x0000, 0x0000
+  },
+};
 
 static void draw_weather_icon(GContext *ctx, GPoint o, int sz, int cond, GColor ink) {
+  if (cond < 0 || cond > 2) cond = 1;
+  const uint16_t *rows = sz >= 16 ? WX16[cond] : WX12[cond];
+  int n = sz >= 16 ? 16 : 12;
   graphics_context_set_fill_color(ctx, ink);
-  graphics_context_set_stroke_color(ctx, ink);
-  graphics_context_set_stroke_width(ctx, sz >= 16 ? 2 : 1);
-  if (cond == 0) {
-    draw_sun(ctx, GPoint(o.x + sz / 2, o.y + sz / 2), sz * 3 / 16, sz * 5 / 16, sz * 8 / 16, 8);
-  } else if (cond == 1) {
-    draw_sun(ctx, GPoint(o.x + sz * 5 / 16, o.y + sz * 5 / 16), sz * 2 / 16, sz * 4 / 16, sz * 6 / 16, 8);
-    draw_cloud(ctx, o.x, o.y + sz, sz);
-  } else {
-    draw_cloud(ctx, o.x, o.y + sz * 68 / 100, sz);
-    for (int i = 0; i < 3; i++) {
-      int x = o.x + sz * (30 + 20 * i) / 100;
-      graphics_draw_line(ctx, GPoint(x, o.y + sz * 80 / 100), GPoint(x, o.y + sz));
+  for (int y = 0; y < n; y++) {
+    for (int x = 0; x < n; ) {   // one rect per horizontal run
+      if (!(rows[y] >> x & 1)) { x++; continue; }
+      int x1 = x;
+      while (x1 < n && (rows[y] >> x1 & 1)) x1++;
+      graphics_fill_rect(ctx, GRect(o.x + x, o.y + y, x1 - x, 1), 0, GCornerNone);
+      x = x1;
     }
   }
 }
