@@ -1,100 +1,247 @@
 [
   { "type": "heading", "defaultValue": "Approach" },
-  { "type": "text", "defaultValue": "Counts you down to the top and bottom of the hour, with more detail the closer it gets." },
-
+  {
+    "type": "text",
+    "defaultValue": "Counts you down to the top and bottom of the hour, with more detail the closer it gets."
+  },
   {
     "type": "section",
     "items": [
       { "type": "heading", "defaultValue": "Appearance" },
       {
-        "type": "select", "messageKey": "THEME", "label": "Theme", "defaultValue": "1",
+        "type": "select",
+        "messageKey": "THEME",
+        "label": "Theme",
+        "defaultValue": "1",
+        "capabilities": ["BW"],
+        "options": [{ "label": "Dark", "value": "1" }, { "label": "Light", "value": "0" }]
+      },
+      {
+        "type": "select",
+        "id": "preset",
+        "label": "Colour preset",
+        "defaultValue": "",
+        "capabilities": ["COLOR"],
+        "description": "Pick a starting point, then fine-tune any colour below.",
         "options": [
-          { "label": "Dark", "value": "1" },
-          { "label": "Light", "value": "0" }
+          { "label": "Custom", "value": "" },
+          { "label": "Classic", "value": "classic" },
+          { "label": "Paper", "value": "paper" },
+          { "label": "Mint", "value": "mint" },
+          { "label": "Amber", "value": "amber" },
+          { "label": "Ice", "value": "ice" },
+          { "label": "Night Vision", "value": "night" },
+          { "label": "Sangria", "value": "sangria" }
         ]
       },
       {
-        "type": "color", "messageKey": "ACCENT", "label": "Accent color",
-        "defaultValue": "FF0000", "sunlight": true,
-        "description": "Used for the seconds, the countdown and the final-minutes bar. Ignored on black-and-white watches."
+        "type": "color",
+        "messageKey": "COLOR_BG",
+        "label": "Background",
+        "defaultValue": "000000",
+        "sunlight": true,
+        "capabilities": ["COLOR"]
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_TIME",
+        "label": "Time",
+        "defaultValue": "FFFFFF",
+        "sunlight": true,
+        "capabilities": ["COLOR"]
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_TEXT",
+        "label": "Text and icons",
+        "defaultValue": "FFFFFF",
+        "sunlight": true,
+        "capabilities": ["COLOR"],
+        "description": "Module values, weather/battery/steps icons and the countdown mode label."
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_LABEL",
+        "label": "Labels",
+        "defaultValue": "AAAAAA",
+        "sunlight": true,
+        "capabilities": ["COLOR"],
+        "description": "DAY, DATE, MONTH."
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_RULE",
+        "label": "Dividers",
+        "defaultValue": "FFFFFF",
+        "sunlight": true,
+        "capabilities": ["COLOR"]
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_BAR",
+        "label": "Progress bar",
+        "defaultValue": "FFFFFF",
+        "sunlight": true,
+        "capabilities": ["COLOR"]
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_EMPTY",
+        "label": "Empty bar segments",
+        "defaultValue": "555555",
+        "sunlight": true,
+        "capabilities": ["COLOR"]
+      },
+      {
+        "type": "color",
+        "messageKey": "ACCENT",
+        "label": "Accent",
+        "defaultValue": "FF0000",
+        "sunlight": true,
+        "capabilities": ["COLOR"],
+        "description": "Seconds, the countdown, the date, the final-minute bar and the disconnected icon."
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_HEART",
+        "label": "Heart",
+        "defaultValue": "FF0000",
+        "sunlight": true,
+        "capabilities": ["COLOR"]
       }
     ]
   },
-
   {
     "type": "section",
     "items": [
       { "type": "heading", "defaultValue": "Modules" },
       { "type": "text", "defaultValue": "Two slots across the top, three along the bottom." },
       {
-        "type": "select", "messageKey": "SLOT_TL", "label": "Top left", "defaultValue": "1",
+        "type": "select",
+        "messageKey": "SLOT_TL",
+        "label": "Top left",
+        "defaultValue": "1",
         "options": [
-          { "label": "None", "value": "0" }, { "label": "Weather", "value": "1" },
-          { "label": "Heart rate", "value": "2" }, { "label": "Battery", "value": "3" },
-          { "label": "Steps", "value": "4" }, { "label": "Day of week", "value": "5" },
-          { "label": "Date", "value": "6" }, { "label": "Month", "value": "7" }
+          { "label": "None", "value": "0" },
+          { "label": "Weather", "value": "1" },
+          { "label": "Heart rate", "value": "2" },
+          { "label": "Battery", "value": "3" },
+          { "label": "Steps", "value": "4" },
+          { "label": "Day of week", "value": "5" },
+          { "label": "Date", "value": "6" },
+          { "label": "Month", "value": "7" }
         ]
       },
       {
-        "type": "select", "messageKey": "SLOT_TR", "label": "Top right", "defaultValue": "2",
+        "type": "select",
+        "messageKey": "SLOT_TR",
+        "label": "Top right",
+        "defaultValue": "2",
         "options": [
-          { "label": "None", "value": "0" }, { "label": "Weather", "value": "1" },
-          { "label": "Heart rate", "value": "2" }, { "label": "Battery", "value": "3" },
-          { "label": "Steps", "value": "4" }, { "label": "Day of week", "value": "5" },
-          { "label": "Date", "value": "6" }, { "label": "Month", "value": "7" }
+          { "label": "None", "value": "0" },
+          { "label": "Weather", "value": "1" },
+          { "label": "Heart rate", "value": "2" },
+          { "label": "Battery", "value": "3" },
+          { "label": "Steps", "value": "4" },
+          { "label": "Day of week", "value": "5" },
+          { "label": "Date", "value": "6" },
+          { "label": "Month", "value": "7" }
         ]
       },
       {
-        "type": "select", "messageKey": "SLOT_B1", "label": "Bottom left", "defaultValue": "5",
+        "type": "select",
+        "messageKey": "SLOT_B1",
+        "label": "Bottom left",
+        "defaultValue": "5",
         "options": [
-          { "label": "None", "value": "0" }, { "label": "Weather", "value": "1" },
-          { "label": "Heart rate", "value": "2" }, { "label": "Battery", "value": "3" },
-          { "label": "Steps", "value": "4" }, { "label": "Day of week", "value": "5" },
-          { "label": "Date", "value": "6" }, { "label": "Month", "value": "7" }
+          { "label": "None", "value": "0" },
+          { "label": "Weather", "value": "1" },
+          { "label": "Heart rate", "value": "2" },
+          { "label": "Battery", "value": "3" },
+          { "label": "Steps", "value": "4" },
+          { "label": "Day of week", "value": "5" },
+          { "label": "Date", "value": "6" },
+          { "label": "Month", "value": "7" }
         ]
       },
       {
-        "type": "select", "messageKey": "SLOT_B2", "label": "Bottom middle", "defaultValue": "6",
+        "type": "select",
+        "messageKey": "SLOT_B2",
+        "label": "Bottom middle",
+        "defaultValue": "6",
         "options": [
-          { "label": "None", "value": "0" }, { "label": "Weather", "value": "1" },
-          { "label": "Heart rate", "value": "2" }, { "label": "Battery", "value": "3" },
-          { "label": "Steps", "value": "4" }, { "label": "Day of week", "value": "5" },
-          { "label": "Date", "value": "6" }, { "label": "Month", "value": "7" }
+          { "label": "None", "value": "0" },
+          { "label": "Weather", "value": "1" },
+          { "label": "Heart rate", "value": "2" },
+          { "label": "Battery", "value": "3" },
+          { "label": "Steps", "value": "4" },
+          { "label": "Day of week", "value": "5" },
+          { "label": "Date", "value": "6" },
+          { "label": "Month", "value": "7" }
         ]
       },
       {
-        "type": "select", "messageKey": "SLOT_B3", "label": "Bottom right", "defaultValue": "7",
+        "type": "select",
+        "messageKey": "SLOT_B3",
+        "label": "Bottom right",
+        "defaultValue": "7",
         "options": [
-          { "label": "None", "value": "0" }, { "label": "Weather", "value": "1" },
-          { "label": "Heart rate", "value": "2" }, { "label": "Battery", "value": "3" },
-          { "label": "Steps", "value": "4" }, { "label": "Day of week", "value": "5" },
-          { "label": "Date", "value": "6" }, { "label": "Month", "value": "7" }
+          { "label": "None", "value": "0" },
+          { "label": "Weather", "value": "1" },
+          { "label": "Heart rate", "value": "2" },
+          { "label": "Battery", "value": "3" },
+          { "label": "Steps", "value": "4" },
+          { "label": "Day of week", "value": "5" },
+          { "label": "Date", "value": "6" },
+          { "label": "Month", "value": "7" }
         ]
       }
     ]
   },
-
   {
     "type": "section",
     "items": [
       { "type": "heading", "defaultValue": "Behavior" },
       {
-        "type": "select", "messageKey": "PERIOD", "label": "Count down to", "defaultValue": "1800",
+        "type": "toggle",
+        "messageKey": "LEADING_ZERO",
+        "label": "Leading zero on the hour",
+        "description": "09:15 rather than 9:15.",
+        "defaultValue": false
+      },
+      {
+        "type": "select",
+        "messageKey": "PERIOD",
+        "label": "Count down to",
+        "defaultValue": "1800",
         "options": [
           { "label": "Every half hour (:00 and :30)", "value": "1800" },
           { "label": "Every hour (:00)", "value": "3600" }
         ]
       },
-      { "type": "toggle", "messageKey": "VIBE", "label": "Buzz one minute out", "defaultValue": false },
+      { "type": "toggle", "messageKey": "VIBE", "label": "Buzz one minute out", "defaultValue": false},
       {
-        "type": "select", "messageKey": "UNITS", "label": "Temperature", "defaultValue": "F",
-        "options": [
-          { "label": "Fahrenheit", "value": "F" },
-          { "label": "Celsius", "value": "C" }
-        ]
+        "type": "select",
+        "messageKey": "UNITS",
+        "label": "Temperature",
+        "defaultValue": "F",
+        "options": [{ "label": "Fahrenheit", "value": "F" }, { "label": "Celsius", "value": "C" }]
       }
     ]
   },
-
+  {
+    "type": "section",
+    "items": [
+      { "type": "heading", "defaultValue": "Bluetooth disconnection" },
+      {
+        "type": "toggle",
+        "messageKey": "BT_ICON",
+        "label": "Show icon",
+        "description": "Replaces the top-right module while the phone is disconnected.",
+        "defaultValue": true
+      },
+      { "type": "toggle", "messageKey": "BT_VIBE", "label": "Vibrate", "defaultValue": false}
+    ]
+  },
   { "type": "submit", "defaultValue": "Save" }
 ]
