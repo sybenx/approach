@@ -356,6 +356,13 @@
           { "label": "Date", "value": "6" },
           { "label": "Month", "value": "7" }
         ]
+      },
+      {
+        "type": "toggle",
+        "messageKey": "BOTTOM_ICONS",
+        "label": "Icons instead of captions",
+        "description": "The bottom row shows symbols (and the date in a little calendar) instead of DAY / DATE / MONTH. Symbols always show while a notification covers the bottom of the screen.",
+        "defaultValue": false
       }
     ]
   },

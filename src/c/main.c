@@ -14,8 +14,10 @@
   #define RES_SMALL  RESOURCE_ID_FONT_XB_15
   #define SZ_TIME    54
   #define SZ_MID     22
+  #define SZ_SMALL   15
   #define RES_HEADER RESOURCE_ID_FONT_XB_17   // 15px read as tiny on this display
   #define HEADER_FALLBACK s_font_small
+  #define PEEK_BAR_LABEL 1   // room for the MINUTE / :30 IN 6M line above a quick view
   #define LABEL_FONT FONT_KEY_GOTHIC_14_BOLD
 #else                                     // 144 x 168 watches
   #define HEADER_H   25
@@ -30,7 +32,10 @@
   #define RES_SMALL  RESOURCE_ID_FONT_XB_12
   #define SZ_TIME    40
   #define SZ_MID     16
+  #define SZ_SMALL   12
   #define HEADER_FONT s_font_mid     // 12px bold digits (6 vs 8) blur together
+  #define HEADER_FALLBACK s_font_small
+  #define PEEK_BAR_LABEL 0   // no room: the dots carry the countdown on their own
   #define LABEL_FONT FONT_KEY_GOTHIC_14          // bold is too wide for MONTH in a 46px cell
 #endif
 
@@ -49,7 +54,7 @@ enum { C_BG, C_TIME, C_TEXT, C_LABEL, C_RULE, C_BAR, C_EMPTY, C_HEART, C_COUNT }
 // persist keys
 enum { P_TEMP = 1, P_COND, P_THEME = 10, P_ACCENT, P_SLOT_TL, P_SLOT_TR, P_SLOT_B1, P_SLOT_B2, P_SLOT_B3, P_PERIOD, P_VIBE,
        P_COLORS, P_BT_VIBE, P_BT_ICON, P_LEAD_ZERO, P_CLOCK,
-       P_DAY_COLORS, P_DAY_ACCENT, P_AUTO_THEME, P_DAY_START, P_NIGHT_START, P_MARK_VIBE, P_LOW_BATT };
+       P_DAY_COLORS, P_DAY_ACCENT, P_AUTO_THEME, P_DAY_START, P_NIGHT_START, P_MARK_VIBE, P_LOW_BATT, P_BOTTOM_ICONS };
 
 static struct {
   int  theme;        // 1 dark, 0 light
@@ -68,9 +73,10 @@ static struct {
   int  day_accent;
   bool mark_vibe;    // double buzz at :00 / :30
   bool low_batt;     // take over the top-right slot when the battery is low
+  bool bottom_icons; // symbols instead of DAY / DATE / MONTH captions in the bottom row
 } s = { 1, 0xFF0000, { MOD_WEATHER, MOD_HEART, MOD_DAY, MOD_DATE, MOD_MONTH }, 1800, false,
         { -1, -1, -1, -1, -1, -1, -1, -1 }, false, true, false, 0,
-        false, 7, 19, { -1, -1, -1, -1, -1, -1, -1, -1 }, 0xFF0000, false, true };
+        false, 7, 19, { -1, -1, -1, -1, -1, -1, -1, -1 }, 0xFF0000, false, true, false };
 
 typedef struct { GColor bg, time, text, label, rule, bar, empty, accent, heart; } Theme;
 
@@ -198,6 +204,8 @@ static const uint16_t WX16[3][16] = {
 };
 
 static const uint16_t BOLT12[12] = { 0x0000, 0x01C0, 0x00E0, 0x0070, 0x0038, 0x03FC, 0x01FC, 0x00E0, 0x0070, 0x0038, 0x000C, 0x0000 };   // charging
+static const uint16_t CAL12[12] = { 0x0000, 0x0104, 0x07FE, 0x07FE, 0x0402, 0x04DA, 0x0402, 0x04DA, 0x0402, 0x07FE, 0x0000, 0x0000 };   // date
+static const uint16_t CAL16[16] = { 0x0000, 0x0C18, 0x7FFE, 0x7FFE, 0x7FFE, 0x4002, 0x46DA, 0x46DA, 0x4002, 0x46DA, 0x46DA, 0x4002, 0x7FFE, 0x0000, 0x0000, 0x0000 };
 static const uint16_t BOLT16[16] = { 0x0000, 0x1E00, 0x0F00, 0x0780, 0x03C0, 0x01E0, 0x3FF0, 0x1FF8, 0x0FF8, 0x0780, 0x03C0, 0x01E0, 0x00F0, 0x0030, 0x0008, 0x0000 };
 
 static void draw_pixel_icon(GContext *ctx, GPoint o, const uint16_t *rows, int n, GColor ink) {
@@ -285,7 +293,7 @@ static void module_info(int mod, struct tm *t, Mod *m) {
       break;
     case MOD_STEPS:
       m->label = "STEPS";
-      if (s_steps >= 10000) snprintf(m->value, sizeof m->value, "%dK", s_steps / 1000);
+      if (s_steps >= 100000) snprintf(m->value, sizeof m->value, "%dK", s_steps / 1000);
       else                  snprintf(m->value, sizeof m->value, "%d", s_steps);
       break;
     case MOD_DAY:   m->label = "DAY";   strftime(m->value, sizeof m->value, "%a", t); upper(m->value); break;
@@ -308,7 +316,8 @@ static int draw_module_icon(GContext *ctx, int mod, GPoint o, Theme *th, GColor 
     }
     case MOD_STEPS:   draw_steps(ctx, o, ICON, ink);                                           return ICON;
     case MOD_BT_OFF:  draw_bt_off(ctx, o, ICON, th->accent);                                   return ICON;
-    default:          return 0;
+    case MOD_DATE:    if (ICON >= 16) draw_pixel_icon(ctx, o, CAL16, 16, ink); else draw_pixel_icon(ctx, o, CAL12, 12, ink); return ICON;
+    default:          return 0;   // day and month names explain themselves
   }
 }
 
@@ -326,20 +335,75 @@ static void draw_header_cell(GContext *ctx, int mod, int x, int w, struct tm *t,
   draw_text_vcenter(ctx, m.value, f, tx, x + w - tx, 0, HEADER_H, GTextAlignmentLeft, ink);
 }
 
-// Bottom cell: small label at top, large value at the bottom.
-static void draw_bottom_cell(GContext *ctx, int mod, int x, int w, int top, int H, struct tm *t, Theme *th, bool accent) {
+// The date inside a little calendar (filled band, two binding tabs), centred in the given area.
+static void draw_framed_date(GContext *ctx, const char *text, GFont f, int sz, GRect area, GColor ink) {
+  GSize ts = text_size(text, f);
+  int cap = sz * 72 / 100, band = sz >= 15 ? 4 : 3;
+  int fw = ts.w + 8, fh = band + cap + 7;
+  int fx = area.origin.x + (area.size.w - fw) / 2;
+  int fy = area.origin.y + (area.size.h - fh + 2) / 2;   // +2 leaves room for the tabs above
+  graphics_context_set_fill_color(ctx, ink);
+  graphics_fill_rect(ctx, GRect(fx, fy, fw, band), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(fx + fw / 4, fy - 2, 2, 2), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(fx + fw - fw / 4 - 2, fy - 2, 2, 2), 0, GCornerNone);
+  graphics_context_set_stroke_color(ctx, ink);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_rect(ctx, GRect(fx, fy, fw, fh));
+  // centre the digits' cap height in the space under the band (the text box ends at the
+  // baseline: this charset has no descenders)
+  int inner_top = fy + band, inner_h = fh - band;
+  int cap_top = inner_top + (inner_h - cap) / 2;
+  int box_y = cap_top - (ts.h - cap);
+  draw_text(ctx, text, f, GRect(fx, box_y, fw, ts.h + 2), GTextAlignmentCenter, ink);
+}
+
+// Symbols that can stand in for a caption. Day and month names explain themselves.
+static bool has_symbol(int mod) {
+  return mod != MOD_NONE && mod != MOD_DAY && mod != MOD_MONTH;
+}
+
+// Bottom cell. Full height: caption (words, or a symbol with the bottom_icons setting) at the top,
+// large value at the bottom. Compact (a quick view is showing, captions gone): symbols always,
+// inline before the value; the value drops to the small font to make room, and the symbol only
+// gives way when even that won't fit (4-digit steps). With symbols on, the date sits in a calendar.
+static void draw_bottom_cell(GContext *ctx, int mod, int x, int w, int top, int H, struct tm *t, Theme *th, bool accent, bool compact) {
   if (mod == MOD_NONE) return;
   Mod m; module_info(mod, t, &m);
-  int label_h = text_size("0", s_font_label).h;
-  draw_text(ctx, m.label, s_font_label, GRect(x + PAD, top + 5, w - PAD, label_h + 2), GTextAlignmentLeft, th->label);
-  GSize vs = text_size(m.value, s_font_mid);
-  // values too wide to sit after the left padding (e.g. MON on 144px) are centred in the cell instead
-  bool fits = vs.w <= w - PAD;
-  GRect box = fits ? GRect(x + PAD, 0, w - PAD, 0) : GRect(x, 0, w, 0);
-  box.origin.y = H - 6 - vs.h + SZ_MID / 5;
-  box.size.h = vs.h + 2;
-  draw_text(ctx, m.value, s_font_mid, box, fits ? GTextAlignmentLeft : GTextAlignmentCenter,
-            accent ? th->accent : th->text);
+  GColor ink = accent ? th->accent : th->text;
+  bool symbols = compact || s.bottom_icons;
+
+  if (mod == MOD_DATE && symbols) {
+    GFont f = compact ? s_font_small : s_font_mid;
+    draw_framed_date(ctx, m.value, f, compact ? SZ_SMALL : SZ_MID, GRect(x, top, w, H - top), ink);
+    return;
+  }
+  if (!compact) {
+    if (symbols && has_symbol(mod)) {
+      draw_module_icon(ctx, mod, GPoint(x + PAD, top + 6), th, th->label);
+    } else {
+      int label_h = text_size("0", s_font_label).h;
+      draw_text(ctx, m.label, s_font_label, GRect(x + PAD, top + 5, w - PAD, label_h + 2), GTextAlignmentLeft, th->label);
+    }
+  }
+
+  // Symbol + value as one unit: left-aligned when it fits after the padding, otherwise centred in
+  // the cell; failing that the value drops to the small font, and only then does the symbol go.
+  // Values too wide even alone (5-digit steps) drop to the small font too.
+  GFont f = s_font_mid;
+  int sz = SZ_MID;
+  GSize vs = text_size(m.value, f);
+  int lead = compact && has_symbol(mod) ? ICON + 2 : 0;
+  if (lead && lead + vs.w > w - 4) { f = s_font_small; sz = SZ_SMALL; vs = text_size(m.value, f); }
+  if (lead && lead + vs.w > w - 4) { lead = 0; f = s_font_mid; sz = SZ_MID; vs = text_size(m.value, f); }
+  if (vs.w > w - 4) { f = s_font_small; sz = SZ_SMALL; vs = text_size(m.value, f); }
+  int unit = lead + vs.w;
+  int ux = unit + 2 <= w - PAD ? x + PAD : x + (w - unit) / 2;   // keep a gap before the divider
+  int vy = H - 6 - vs.h + sz / 5;
+  if (lead) {
+    int cap = sz * 72 / 100;   // centre the symbol on the digits
+    draw_module_icon(ctx, mod, GPoint(ux, H - 6 - cap / 2 - ICON / 2), th, ink);
+  }
+  draw_text(ctx, m.value, f, GRect(ux + lead, vy, vs.w + 4, vs.h + 2), GTextAlignmentLeft, ink);
 }
 
 /* ============================== drawing ============================= */
@@ -361,15 +425,17 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, th.bg);
   graphics_fill_rect(ctx, full, 0, GCornerNone);
 
-  int date_h  = compact ? 0 : DATE_H;
+  // While a quick view covers the bottom, the bottom row shrinks to values only (no captions),
+  // and on the 144px watches the label line above the bar is dropped to make room.
+  int date_h  = compact ? SZ_MID + 8 : DATE_H;
   int date_y  = H - date_h;
-  int rule2_y = compact ? H : date_y - RULE;
+  int rule2_y = date_y - RULE;
   int half    = (W - RULE) / 2;
 
   graphics_context_set_fill_color(ctx, th.rule);
   graphics_fill_rect(ctx, GRect(0, HEADER_H, W, RULE), 0, GCornerNone);
   graphics_fill_rect(ctx, GRect(half, 0, RULE, HEADER_H), 0, GCornerNone);
-  if (!compact) graphics_fill_rect(ctx, GRect(0, rule2_y, W, RULE), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(0, rule2_y, W, RULE), 0, GCornerNone);
 
   /* header modules */
   // A low battery takes the top-right slot unless the battery is already showing; a lost phone
@@ -416,14 +482,16 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   int bar_w = ((W - 2 * PAD + 1) / 60) * 60 - 1;
   int bar_x = (W - bar_w) / 2;
 
-  const char *mode = step == 60 ? "MINUTE" : step == 5 ? "5 SEC" : "SECONDS";
-  draw_text(ctx, mode, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentLeft, th.text);
-
   int target_min = ((t->tm_min * 60 + t->tm_sec + remaining) / 60) % 60;
   int shown = (remaining + step - 1) / step * step;   // whole 5s in the 5-second stretch, so it's never stale
   if (show_sec) snprintf(buf, sizeof buf, ":%02d IN %d:%02d", target_min, shown / 60, shown % 60);
   else          snprintf(buf, sizeof buf, ":%02d IN %dM",     target_min, (remaining + 59) / 60);
-  draw_text(ctx, buf, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentRight, th.accent);
+
+  if (!compact || PEEK_BAR_LABEL) {
+    const char *mode = step == 60 ? "MINUTE" : step == 5 ? "5 SEC" : "SECONDS";
+    draw_text(ctx, mode, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentLeft, th.text);
+    draw_text(ctx, buf, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentRight, th.accent);
+  }
 
   int cells  = ph.cells;
   int filled = ph.filled;
@@ -439,6 +507,10 @@ static void canvas_update(Layer *layer, GContext *ctx) {
       if (i < filled) {
         graphics_context_set_fill_color(ctx, fill_c);
         graphics_fill_circle(ctx, c, r);
+#if !defined(PBL_COLOR)
+        // Without red to tell them apart, lit seconds get a hole so they differ from lit minutes.
+        if (step == 1) { graphics_context_set_fill_color(ctx, th.bg); graphics_fill_circle(ctx, c, 1); }
+#endif
       } else {
 #if defined(PBL_COLOR)
         graphics_context_set_fill_color(ctx, th.empty);
@@ -470,15 +542,13 @@ static void canvas_update(Layer *layer, GContext *ctx) {
     }
   }
 
-  /* bottom modules (hidden while a quick view is on screen) */
-  if (!compact) {
-    int cw = (W - 2 * RULE) / 3;
-    graphics_context_set_fill_color(ctx, th.rule);
-    graphics_fill_rect(ctx, GRect(cw, date_y, RULE, DATE_H), 0, GCornerNone);
-    graphics_fill_rect(ctx, GRect(2 * cw + RULE, date_y, RULE, DATE_H), 0, GCornerNone);
-    for (int i = 0; i < 3; i++) {
-      draw_bottom_cell(ctx, s.slot[2 + i], i * (cw + RULE), cw, date_y, H, t, &th, i == 1);
-    }
+  /* bottom modules */
+  int cw = (W - 2 * RULE) / 3;
+  graphics_context_set_fill_color(ctx, th.rule);
+  graphics_fill_rect(ctx, GRect(cw, date_y, RULE, date_h), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(2 * cw + RULE, date_y, RULE, date_h), 0, GCornerNone);
+  for (int i = 0; i < 3; i++) {
+    draw_bottom_cell(ctx, s.slot[2 + i], i * (cw + RULE), cw, date_y, H, t, &th, i == 1, compact);
   }
 }
 
@@ -587,6 +657,7 @@ static void inbox_cb(DictionaryIterator *it, void *ctx) {
   if ((tp = dict_find(it, MESSAGE_KEY_NIGHT_START))) { s.night_start = tuple_int(tp, 10); settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_MARK_VIBE)))   { s.mark_vibe   = tuple_int(tp, 10) != 0; settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_LOW_BATT)))    { s.low_batt    = tuple_int(tp, 10) != 0; settings_changed = true; }
+  if ((tp = dict_find(it, MESSAGE_KEY_BOTTOM_ICONS))) { s.bottom_icons = tuple_int(tp, 10) != 0; settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_DAY_ACCENT)))  { s.day_accent  = tuple_int(tp, 16); settings_changed = true; }
   const uint32_t day_keys[C_COUNT] = { MESSAGE_KEY_DAY_COLOR_BG, MESSAGE_KEY_DAY_COLOR_TIME, MESSAGE_KEY_DAY_COLOR_TEXT,
     MESSAGE_KEY_DAY_COLOR_LABEL, MESSAGE_KEY_DAY_COLOR_RULE, MESSAGE_KEY_DAY_COLOR_BAR, MESSAGE_KEY_DAY_COLOR_EMPTY, MESSAGE_KEY_DAY_COLOR_HEART };
@@ -618,6 +689,7 @@ static void inbox_cb(DictionaryIterator *it, void *ctx) {
     persist_write_int(P_DAY_ACCENT, s.day_accent);
     persist_write_bool(P_MARK_VIBE, s.mark_vibe);
     persist_write_bool(P_LOW_BATT, s.low_batt);
+    persist_write_bool(P_BOTTOM_ICONS, s.bottom_icons);
     if (s_timer) { app_timer_cancel(s_timer); s_timer = NULL; }
     schedule_timer();
   }
@@ -643,6 +715,7 @@ static void load_settings(void) {
   if (persist_exists(P_DAY_ACCENT))  s.day_accent  = persist_read_int(P_DAY_ACCENT);
   if (persist_exists(P_MARK_VIBE))   s.mark_vibe   = persist_read_bool(P_MARK_VIBE);
   if (persist_exists(P_LOW_BATT))    s.low_batt    = persist_read_bool(P_LOW_BATT);
+  if (persist_exists(P_BOTTOM_ICONS)) s.bottom_icons = persist_read_bool(P_BOTTOM_ICONS);
   if (s.period != 3600) s.period = 1800;
 }
 
