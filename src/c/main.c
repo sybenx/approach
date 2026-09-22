@@ -77,15 +77,26 @@ static int  s_steps;
 static bool s_vibed;
 
 /* ============================ time maths ============================ */
-static int current_step(struct tm *t, int *remaining_out) {
+// Countdown phases, finest first: {window seconds, segment seconds}.
+static const struct { int window, step; } PHASES[] = { {5, 1}, {15, 3}, {60, 15}, {600, 60} };
+#define N_PHASES (int)(sizeof PHASES / sizeof PHASES[0])
+
+// Picks the finest phase whose window covers the time remaining; outside all of them the
+// bar spans the whole period in minutes. prev_window is where the next finer phase starts.
+static int current_phase(struct tm *t, int *remaining_out, int *window_out, int *prev_window_out) {
   int into = (t->tm_min * 60 + t->tm_sec) % s.period;
   int remaining = s.period - into;
-  if (remaining_out) *remaining_out = remaining;
-  if (remaining <= 60)  return 1;
-  if (remaining <= 120) return 5;
-  if (remaining <= 180) return 15;
-  if (remaining <= 240) return 30;
-  return 60;
+  int window = s.period, step = 60, prev = PHASES[N_PHASES - 1].window;
+  for (int i = 0; i < N_PHASES; i++) {
+    if (remaining <= PHASES[i].window) {
+      window = PHASES[i].window; step = PHASES[i].step; prev = i ? PHASES[i - 1].window : 0;
+      break;
+    }
+  }
+  if (remaining_out)   *remaining_out = remaining;
+  if (window_out)      *window_out = window;
+  if (prev_window_out) *prev_window_out = prev;
+  return step;
 }
 
 /* =========================== text helpers =========================== */
@@ -250,8 +261,8 @@ static void canvas_update(Layer *layer, GContext *ctx) {
 
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
-  int remaining;
-  int step = current_step(t, &remaining);
+  int remaining, window;
+  int step = current_phase(t, &remaining, &window, NULL);
   bool show_sec = step < 60;
   char buf[16];
 
@@ -297,8 +308,7 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   int label_h = text_size("0", s_font_label).h;
   int label_y = bar_y - 4 - label_h;
 
-  const char *mode = step == 60 ? "MINUTE" : step == 30 ? "30 SEC" : step == 15 ? "15 SEC"
-                   : step == 5  ? "5 SEC"  : "SECONDS";
+  const char *mode = step == 60 ? "MINUTE" : step == 15 ? "15 SEC" : step == 3 ? "3 SEC" : "SECONDS";
   draw_text(ctx, mode, s_font_label, GRect(PAD, label_y, W - 2 * PAD, label_h + 2), GTextAlignmentLeft, th.ink);
 
   int target_min = ((t->tm_min * 60 + t->tm_sec + remaining) / 60) % 60;
@@ -306,10 +316,9 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   else          snprintf(buf, sizeof buf, ":%02d IN %dM",     target_min, (remaining + 59) / 60);
   draw_text(ctx, buf, s_font_label, GRect(PAD, label_y, W - 2 * PAD, label_h + 2), GTextAlignmentRight, th.accent);
 
-  int cells, filled;
-  GColor fill_c;
-  if (show_sec) { cells = 60 / step;      filled = t->tm_sec / step;                    fill_c = th.accent; }
-  else          { cells = s.period / 60;  filled = ((t->tm_min * 60) % s.period) / 60;  fill_c = th.ink;    }
+  int cells  = window / step;
+  int filled = (window - remaining) / step;
+  GColor fill_c = show_sec ? th.accent : th.ink;
   int bar_w = W - 2 * PAD;
   for (int i = 0; i < cells; i++) {
     int x0 = PAD + (i * (bar_w + 1)) / cells;
@@ -350,7 +359,7 @@ static void schedule_timer(void);
 
 static void check_vibe(struct tm *t) {
   int remaining;
-  current_step(t, &remaining);
+  current_phase(t, &remaining, NULL, NULL);
   if (remaining > 60) { s_vibed = false; return; }
   if (s.vibe && !s_vibed) { vibes_short_pulse(); s_vibed = true; }
 }
@@ -363,16 +372,19 @@ static void timer_cb(void *ctx) {
   schedule_timer();
 }
 
-// In the final four minutes, wake exactly on each 30/15/5/1-second boundary.
-// Outside them no timer runs at all; the minute tick does everything.
+// In the final minute, wake exactly on each segment or phase boundary.
+// Outside it no timer runs at all; the minute tick does everything.
 static void schedule_timer(void) {
   if (s_timer) return;
   time_t sec; uint16_t ms;
   time_ms(&sec, &ms);
   struct tm *t = localtime(&sec);
-  int step = current_step(t, NULL);
+  int remaining, prev_window;
+  int step = current_phase(t, &remaining, NULL, &prev_window);
   if (step >= 60) return;
-  int wait = (step - (t->tm_sec % step)) * 1000 - ms + 20;
+  int target = remaining - (remaining % step ? remaining % step : step);   // next segment edge
+  if (target < prev_window) target = prev_window;                           // or next phase start
+  int wait = (remaining - target) * 1000 - ms + 20;
   s_timer = app_timer_register(wait, timer_cb, NULL);
 }
 
