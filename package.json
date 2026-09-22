@@ -1,0 +1,33 @@
+{
+  "name": "approach",
+  "author": "Bus driver",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Approach",
+    "uuid": "b9bfa0d9-6ecb-423f-b162-ec04a8cb9e3f",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": ["aplite", "basalt", "diorite", "emery"],
+    "watchapp": {
+      "watchface": true
+    },
+    "capabilities": ["location", "health"],
+    "messageKeys": ["TEMP", "COND"],
+    "resources": {
+      "media": [
+        { "type": "font", "name": "FONT_XB_54", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9:]",      "targetPlatforms": ["emery"] },
+        { "type": "font", "name": "FONT_XB_22", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z]",    "targetPlatforms": ["emery"] },
+        { "type": "font", "name": "FONT_XB_15", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9°%-]",    "targetPlatforms": ["emery"] },
+        { "type": "font", "name": "FONT_SB_11", "file": "fonts/Archivo-SemiBold.ttf",  "characterRegex": "[0-9A-Z :]",  "targetPlatforms": ["emery"] },
+
+        { "type": "font", "name": "FONT_XB_40", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9:]",      "targetPlatforms": ["aplite", "basalt", "diorite"] },
+        { "type": "font", "name": "FONT_XB_16", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z]",    "targetPlatforms": ["aplite", "basalt", "diorite"] },
+        { "type": "font", "name": "FONT_XB_12", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9°%-]",    "targetPlatforms": ["aplite", "basalt", "diorite"] },
+        { "type": "font", "name": "FONT_SB_10", "file": "fonts/Archivo-SemiBold.ttf",  "characterRegex": "[0-9A-Z :]",  "targetPlatforms": ["aplite", "basalt", "diorite"] }
+      ]
+    }
+  }
+}
