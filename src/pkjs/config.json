@@ -1,0 +1,100 @@
+[
+  { "type": "heading", "defaultValue": "Approach" },
+  { "type": "text", "defaultValue": "Counts you down to the top and bottom of the hour, with more detail the closer it gets." },
+
+  {
+    "type": "section",
+    "items": [
+      { "type": "heading", "defaultValue": "Appearance" },
+      {
+        "type": "select", "messageKey": "THEME", "label": "Theme", "defaultValue": "1",
+        "options": [
+          { "label": "Dark", "value": "1" },
+          { "label": "Light", "value": "0" }
+        ]
+      },
+      {
+        "type": "color", "messageKey": "ACCENT", "label": "Accent color",
+        "defaultValue": "FF0000", "sunlight": true,
+        "description": "Used for the seconds, the countdown and the final-minutes bar. Ignored on black-and-white watches."
+      }
+    ]
+  },
+
+  {
+    "type": "section",
+    "items": [
+      { "type": "heading", "defaultValue": "Modules" },
+      { "type": "text", "defaultValue": "Two slots across the top, three along the bottom." },
+      {
+        "type": "select", "messageKey": "SLOT_TL", "label": "Top left", "defaultValue": "1",
+        "options": [
+          { "label": "None", "value": "0" }, { "label": "Weather", "value": "1" },
+          { "label": "Heart rate", "value": "2" }, { "label": "Battery", "value": "3" },
+          { "label": "Steps", "value": "4" }, { "label": "Day of week", "value": "5" },
+          { "label": "Date", "value": "6" }, { "label": "Month", "value": "7" }
+        ]
+      },
+      {
+        "type": "select", "messageKey": "SLOT_TR", "label": "Top right", "defaultValue": "2",
+        "options": [
+          { "label": "None", "value": "0" }, { "label": "Weather", "value": "1" },
+          { "label": "Heart rate", "value": "2" }, { "label": "Battery", "value": "3" },
+          { "label": "Steps", "value": "4" }, { "label": "Day of week", "value": "5" },
+          { "label": "Date", "value": "6" }, { "label": "Month", "value": "7" }
+        ]
+      },
+      {
+        "type": "select", "messageKey": "SLOT_B1", "label": "Bottom left", "defaultValue": "5",
+        "options": [
+          { "label": "None", "value": "0" }, { "label": "Weather", "value": "1" },
+          { "label": "Heart rate", "value": "2" }, { "label": "Battery", "value": "3" },
+          { "label": "Steps", "value": "4" }, { "label": "Day of week", "value": "5" },
+          { "label": "Date", "value": "6" }, { "label": "Month", "value": "7" }
+        ]
+      },
+      {
+        "type": "select", "messageKey": "SLOT_B2", "label": "Bottom middle", "defaultValue": "6",
+        "options": [
+          { "label": "None", "value": "0" }, { "label": "Weather", "value": "1" },
+          { "label": "Heart rate", "value": "2" }, { "label": "Battery", "value": "3" },
+          { "label": "Steps", "value": "4" }, { "label": "Day of week", "value": "5" },
+          { "label": "Date", "value": "6" }, { "label": "Month", "value": "7" }
+        ]
+      },
+      {
+        "type": "select", "messageKey": "SLOT_B3", "label": "Bottom right", "defaultValue": "7",
+        "options": [
+          { "label": "None", "value": "0" }, { "label": "Weather", "value": "1" },
+          { "label": "Heart rate", "value": "2" }, { "label": "Battery", "value": "3" },
+          { "label": "Steps", "value": "4" }, { "label": "Day of week", "value": "5" },
+          { "label": "Date", "value": "6" }, { "label": "Month", "value": "7" }
+        ]
+      }
+    ]
+  },
+
+  {
+    "type": "section",
+    "items": [
+      { "type": "heading", "defaultValue": "Behavior" },
+      {
+        "type": "select", "messageKey": "PERIOD", "label": "Count down to", "defaultValue": "1800",
+        "options": [
+          { "label": "Every half hour (:00 and :30)", "value": "1800" },
+          { "label": "Every hour (:00)", "value": "3600" }
+        ]
+      },
+      { "type": "toggle", "messageKey": "VIBE", "label": "Buzz one minute out", "defaultValue": false },
+      {
+        "type": "select", "messageKey": "UNITS", "label": "Temperature", "defaultValue": "F",
+        "options": [
+          { "label": "Fahrenheit", "value": "F" },
+          { "label": "Celsius", "value": "C" }
+        ]
+      }
+    ]
+  },
+
+  { "type": "submit", "defaultValue": "Save" }
+]

@@ -1,10 +1,20 @@
-// Runs on the phone. Fetches current weather from Open-Meteo (no API key)
-// and sends it to the watch. The watch asks for a refresh every 30 minutes.
+// Runs on the phone. Hosts the settings page (via Clay) and fetches current
+// weather from Open-Meteo (no API key). The watch asks for a refresh every 30 min.
 
-var TEMP_UNIT = 'fahrenheit';   // or 'celsius'
+var Clay = require('pebble-clay');
+var clayConfig = require('./config.json');
+var clay = new Clay(clayConfig);
 
-// Map WMO weather codes to the three icons the face knows:
-// 0 = sun, 1 = sun behind cloud, 2 = rain (covers drizzle, snow, storms)
+function temperatureUnit() {
+  try {
+    var s = JSON.parse(localStorage.getItem('clay-settings')) || {};
+    return s.UNITS === 'C' ? 'celsius' : 'fahrenheit';
+  } catch (e) {
+    return 'fahrenheit';
+  }
+}
+
+// WMO weather codes -> 0 sun, 1 sun behind cloud, 2 rain (also drizzle, snow, storms)
 function conditionFromCode(code) {
   if (code <= 1) return 0;
   if (code <= 3 || code === 45 || code === 48) return 1;
@@ -23,7 +33,7 @@ function fetchWeather() {
       + '?latitude=' + pos.coords.latitude.toFixed(3)
       + '&longitude=' + pos.coords.longitude.toFixed(3)
       + '&current=temperature_2m,weather_code'
-      + '&temperature_unit=' + TEMP_UNIT;
+      + '&temperature_unit=' + temperatureUnit();
 
     var xhr = new XMLHttpRequest();
     xhr.onload = function () {
@@ -44,3 +54,6 @@ function fetchWeather() {
 
 Pebble.addEventListener('ready', function () { fetchWeather(); });
 Pebble.addEventListener('appmessage', function () { fetchWeather(); });
+// Clay already sends the new settings to the watch when the page closes;
+// we also refetch weather in case the unit changed.
+Pebble.addEventListener('webviewclosed', function () { setTimeout(fetchWeather, 1500); });

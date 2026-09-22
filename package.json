@@ -1,10 +1,12 @@
 {
   "name": "approach",
   "author": "Bus driver",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "keywords": ["pebble-app"],
   "private": true,
-  "dependencies": {},
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
   "pebble": {
     "displayName": "Approach",
     "uuid": "b9bfa0d9-6ecb-423f-b162-ec04a8cb9e3f",
@@ -14,19 +16,24 @@
     "watchapp": {
       "watchface": true
     },
-    "capabilities": ["location", "health"],
-    "messageKeys": ["TEMP", "COND"],
+    "capabilities": ["configurable", "location", "health"],
+    "messageKeys": [
+      "TEMP", "COND",
+      "THEME", "ACCENT",
+      "SLOT_TL", "SLOT_TR", "SLOT_B1", "SLOT_B2", "SLOT_B3",
+      "PERIOD", "VIBE", "UNITS"
+    ],
     "resources": {
       "media": [
-        { "type": "font", "name": "FONT_XB_54", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9:]",      "targetPlatforms": ["emery"] },
-        { "type": "font", "name": "FONT_XB_22", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z]",    "targetPlatforms": ["emery"] },
-        { "type": "font", "name": "FONT_XB_15", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9°%-]",    "targetPlatforms": ["emery"] },
-        { "type": "font", "name": "FONT_SB_11", "file": "fonts/Archivo-SemiBold.ttf",  "characterRegex": "[0-9A-Z :]",  "targetPlatforms": ["emery"] },
+        { "type": "font", "name": "FONT_XB_54", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9:]",        "targetPlatforms": ["emery"] },
+        { "type": "font", "name": "FONT_XB_22", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z°%-]",   "targetPlatforms": ["emery"] },
+        { "type": "font", "name": "FONT_XB_15", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z°%-]",   "targetPlatforms": ["emery"] },
+        { "type": "font", "name": "FONT_SB_11", "file": "fonts/Archivo-SemiBold.ttf",  "characterRegex": "[0-9A-Z :]",    "targetPlatforms": ["emery"] },
 
-        { "type": "font", "name": "FONT_XB_40", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9:]",      "targetPlatforms": ["aplite", "basalt", "diorite"] },
-        { "type": "font", "name": "FONT_XB_16", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z]",    "targetPlatforms": ["aplite", "basalt", "diorite"] },
-        { "type": "font", "name": "FONT_XB_12", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9°%-]",    "targetPlatforms": ["aplite", "basalt", "diorite"] },
-        { "type": "font", "name": "FONT_SB_10", "file": "fonts/Archivo-SemiBold.ttf",  "characterRegex": "[0-9A-Z :]",  "targetPlatforms": ["aplite", "basalt", "diorite"] }
+        { "type": "font", "name": "FONT_XB_40", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9:]",        "targetPlatforms": ["aplite", "basalt", "diorite"] },
+        { "type": "font", "name": "FONT_XB_16", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z°%-]",   "targetPlatforms": ["aplite", "basalt", "diorite"] },
+        { "type": "font", "name": "FONT_XB_12", "file": "fonts/Archivo-ExtraBold.ttf", "characterRegex": "[0-9A-Z°%-]",   "targetPlatforms": ["aplite", "basalt", "diorite"] },
+        { "type": "font", "name": "FONT_SB_10", "file": "fonts/Archivo-SemiBold.ttf",  "characterRegex": "[0-9A-Z :]",    "targetPlatforms": ["aplite", "basalt", "diorite"] }
       ]
     }
   }
