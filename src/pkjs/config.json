@@ -170,7 +170,7 @@
         "defaultValue": "FF0000",
         "sunlight": true,
         "capabilities": ["COLOR"],
-        "description": "Seconds, the countdown, the date, the final-minute bar and the disconnected icon."
+        "description": "Seconds, the countdown, the date, the bar for the last five minutes and the disconnected icon."
       },
       {
         "type": "color",
@@ -407,16 +407,34 @@
         "label": "Count down to",
         "defaultValue": "1800",
         "options": [
-          { "label": "Every half hour (:00 and :30)", "value": "1800" },
-          { "label": "Every hour (:00)", "value": "3600" }
+          { "label": "Every 15 minutes", "value": "900" },
+          { "label": "Every 20 minutes", "value": "1200" },
+          { "label": "Every half hour", "value": "1800" },
+          { "label": "Every hour", "value": "3600" }
         ]
       },
-      { "type": "toggle", "messageKey": "VIBE", "label": "Buzz one minute out", "defaultValue": false},
+      {
+        "type": "slider",
+        "messageKey": "OFFSET",
+        "label": "Minutes past the hour",
+        "description": "Where the marks fall: 0 counts to :00 and :30, 5 to :05 and :35.",
+        "defaultValue": 0,
+        "min": 0,
+        "max": 59,
+        "step": 1
+      },
+      {
+        "type": "toggle",
+        "messageKey": "VIBE",
+        "label": "Buzz five minutes out",
+        "description": "One pulse as the bar turns to the accent colour.",
+        "defaultValue": false
+      },
       {
         "type": "toggle",
         "messageKey": "MARK_VIBE",
         "label": "Buzz at the mark",
-        "description": "A double buzz exactly at :00 (and :30).",
+        "description": "A double buzz exactly on each mark.",
         "defaultValue": false
       },
       {

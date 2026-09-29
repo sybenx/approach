@@ -17,7 +17,7 @@
   #define SZ_SMALL   15
   #define RES_HEADER RESOURCE_ID_FONT_XB_17   // 15px read as tiny on this display
   #define HEADER_FALLBACK s_font_small
-  #define PEEK_BAR_LABEL 1   // room for the MINUTE / :30 IN 6M line above a quick view
+  #define PEEK_BAR_LABEL 1   // room for the NEXT / :30 IN 6M line above a quick view
   #define LABEL_FONT FONT_KEY_GOTHIC_14_BOLD
 #else                                     // 144 x 168 watches
   #define HEADER_H   25
@@ -35,7 +35,7 @@
   #define SZ_SMALL   12
   #define HEADER_FONT s_font_mid     // 12px bold digits (6 vs 8) blur together
   #define HEADER_FALLBACK s_font_small
-  #define PEEK_BAR_LABEL 0   // no room: the dots carry the countdown on their own
+  #define PEEK_BAR_LABEL 0   // no room: the bar carries the countdown on its own
   #define LABEL_FONT FONT_KEY_GOTHIC_14          // bold is too wide for MONTH in a 46px cell
 #endif
 
@@ -54,14 +54,16 @@ enum { C_BG, C_TIME, C_TEXT, C_LABEL, C_RULE, C_BAR, C_EMPTY, C_HEART, C_COUNT }
 // persist keys
 enum { P_TEMP = 1, P_COND, P_THEME = 10, P_ACCENT, P_SLOT_TL, P_SLOT_TR, P_SLOT_B1, P_SLOT_B2, P_SLOT_B3, P_PERIOD, P_VIBE,
        P_COLORS, P_BT_VIBE, P_BT_ICON, P_LEAD_ZERO, P_CLOCK,
-       P_DAY_COLORS, P_DAY_ACCENT, P_AUTO_THEME, P_DAY_START, P_NIGHT_START, P_MARK_VIBE, P_LOW_BATT, P_BOTTOM_ICONS, P_DATE_STYLE };
+       P_DAY_COLORS, P_DAY_ACCENT, P_AUTO_THEME, P_DAY_START, P_NIGHT_START, P_MARK_VIBE, P_LOW_BATT, P_BOTTOM_ICONS, P_DATE_STYLE,
+       P_OFFSET };
 
 static struct {
   int  theme;        // 1 dark, 0 light
   int  accent;       // 0xRRGGBB
   int  slot[5];      // TL, TR, B1, B2, B3
-  int  period;       // 1800 or 3600 seconds
-  bool vibe;
+  int  period;       // 900, 1200, 1800 or 3600 seconds: each divides the hour
+  int  offset;       // minutes past the hour of the first mark
+  bool vibe;         // one buzz at five minutes out
   int  color[C_COUNT];  // 0xRRGGBB or -1
   bool bt_vibe;      // buzz when the phone disconnects
   bool bt_icon;      // show the disconnected icon
@@ -75,7 +77,7 @@ static struct {
   bool low_batt;     // take over the top-right slot when the battery is low
   bool bottom_icons; // symbols instead of DAY / DATE / MONTH captions in the bottom row
   int  date_style;   // 0 plain number, 1 calendar icon, 2 number inside a calendar frame
-} s = { 1, 0xFF0000, { MOD_WEATHER, MOD_HEART, MOD_DAY, MOD_DATE, MOD_MONTH }, 1800, false,
+} s = { 1, 0xFF0000, { MOD_WEATHER, MOD_HEART, MOD_DAY, MOD_DATE, MOD_MONTH }, 1800, 0, false,
         { -1, -1, -1, -1, -1, -1, -1, -1 }, false, true, false, 0,
         false, 7, 19, { -1, -1, -1, -1, -1, -1, -1, -1 }, 0xFF0000, false, true, false, 0 };
 
@@ -131,33 +133,27 @@ static bool s_vibed;
 static bool s_connected = true;
 
 /* ============================ time maths ============================ */
-// Countdown phases, finest first: the bar covers `from` down to `to` seconds left in `step`s.
-// "Live" phases light the segment you're in, so the bar is full for its last step and every
-// last-minute bar finishes full; the others light a segment once its step has passed.
-static const struct { int from, to, step; bool live; } PHASES[] = {
-  { 10, 0, 1, true }, { 60, 10, 5, true }, { 600, 0, 60, false },
-};
-#define N_PHASES (int)(sizeof PHASES / sizeof PHASES[0])
+// One scale for the whole period: a minute a segment, filling toward the mark. Three moments
+// change how it reads, each one something to act on: five minutes out the bar turns to the
+// accent (and can buzz), the last minute counts in seconds, and the minute after the mark
+// holds NOW with the bar full.
+#define SOON  300   // seconds
+#define FINAL 60
 
-typedef struct { int remaining, step, from, cells, filled, next; } Phase;   // next: where the finer phase starts
+typedef struct { int remaining, into; bool now, soon, final; } Countdown;
 
-// Outside every listed phase the bar spans the whole period in minutes.
-static Phase current_phase(struct tm *t) {
-  Phase ph = { .step = 60, .from = s.period, .cells = s.period / 60, .next = PHASES[N_PHASES - 1].from };
-  ph.remaining = s.period - (t->tm_min * 60 + t->tm_sec) % s.period;
-  bool live = false;
-  for (int i = 0; i < N_PHASES; i++) {
-    if (ph.remaining <= PHASES[i].from) {
-      ph.step = PHASES[i].step; ph.from = PHASES[i].from;
-      ph.cells = (PHASES[i].from - PHASES[i].to) / ph.step;
-      ph.next = i ? PHASES[i - 1].from : 0;
-      live = PHASES[i].live;
-      break;
-    }
-  }
-  ph.filled = (ph.from - ph.remaining) / ph.step + (live ? 1 : 0);
-  return ph;
+static Countdown countdown(struct tm *t) {
+  Countdown c;
+  int sec = t->tm_min * 60 + t->tm_sec - s.offset * 60;
+  c.into = (sec % s.period + s.period) % s.period;
+  c.remaining = s.period - c.into;
+  c.now   = c.into < 60;
+  c.final = c.remaining <= FINAL;
+  c.soon  = c.remaining <= SOON;
+  return c;
 }
+
+static bool valid_period(int p) { return p == 900 || p == 1200 || p == 1800 || p == 3600; }
 
 /* =========================== text helpers =========================== */
 static GSize text_size(const char *str, GFont f) {
@@ -420,9 +416,7 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
   Theme th = theme(t);
-  Phase ph = current_phase(t);
-  int remaining = ph.remaining, step = ph.step;
-  bool show_sec = step < 60;
+  Countdown cd = countdown(t);
   char buf[16];
 
   /* background + rules */
@@ -463,14 +457,13 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   int time_y = area_y + TIME_TOP - SZ_TIME / 5;
   draw_text(ctx, buf, s_font_time, GRect(PAD, time_y, W - 2 * PAD, ts.h + 2), GTextAlignmentLeft, th.time);
 
-  // AM/PM tucks into the top-right corner of the time; the last-minute seconds take the bottom.
+  // AM/PM tucks into the top-right corner of the time; the last minute's seconds take the bottom.
   if (!h24) {
     int ap_y = area_y + TIME_TOP + (SZ_TIME - 40) / 7;   // +2px on emery to meet the taller digits
     draw_text(ctx, t->tm_hour < 12 ? "AM" : "PM", s_font_label, GRect(PAD + ts.w + 5, ap_y, W, 20), GTextAlignmentLeft, th.label);
   }
 
-  // Ticking seconds only for the final 10; the 5-second stretch before it redraws every 5s.
-  if (step == 1) {
+  if (cd.final) {
     snprintf(buf, sizeof buf, "%02d", t->tm_sec);
     GSize ss = text_size(buf, s_font_mid);
     int sec_y = time_y + (ts.h - ss.h) - (SZ_TIME - SZ_MID) / 5;
@@ -481,53 +474,29 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   int bar_y   = rule2_y - PAD - BAR_H;
   int label_h = text_size("0", s_font_label).h;
   int label_y = bar_y - 4 - label_h;
-  // Every segment count (60, 30, 10, 5, 4) divides 60, so a bar whose width plus one gap is a
-  // multiple of 60 splits into whole, identical pixels in every phase. Labels line up with its ends.
+  // Every segment count (60, 30, 20, 15) divides 60, so a bar whose width plus one gap is a
+  // multiple of 60 splits into whole, identical pixels for every period. Labels line up with its ends.
   int bar_w = ((W - 2 * PAD + 1) / 60) * 60 - 1;
   int bar_x = (W - bar_w) / 2;
 
-  int target_min = ((t->tm_min * 60 + t->tm_sec + remaining) / 60) % 60;
-  int shown = (remaining + step - 1) / step * step;   // whole 5s in the 5-second stretch, so it's never stale
-  if (show_sec) snprintf(buf, sizeof buf, ":%02d IN %d:%02d", target_min, shown / 60, shown % 60);
-  else          snprintf(buf, sizeof buf, ":%02d IN %dM",     target_min, (remaining + 59) / 60);
+  // The mark being counted to, or during NOW the one just reached.
+  int target_min = ((t->tm_min * 60 + t->tm_sec + (cd.now ? -cd.into : cd.remaining)) / 60 % 60 + 60) % 60;
+  if (cd.now)        snprintf(buf, sizeof buf, ":%02d", target_min);
+  else if (cd.final) snprintf(buf, sizeof buf, "%dS", cd.remaining);   // just the seconds left
+  else               snprintf(buf, sizeof buf, ":%02d IN %dM",     target_min, (cd.remaining + 59) / 60);
 
+  bool hot = cd.now || cd.soon;
   if (!compact || PEEK_BAR_LABEL) {
-    const char *mode = step == 60 ? "MINUTE" : step == 5 ? "5 SEC" : "SECONDS";
-    draw_text(ctx, mode, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentLeft, th.text);
+    const char *state = cd.now ? "NOW" : cd.soon ? "SOON" : "NEXT";
+    draw_text(ctx, state, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentLeft, hot ? th.accent : th.text);
     draw_text(ctx, buf, s_font_label, GRect(bar_x, label_y, bar_w, label_h + 2), GTextAlignmentRight, th.accent);
   }
 
-  int cells  = ph.cells;
-  int filled = ph.filled;
-  GColor fill_c = show_sec ? th.accent : th.bar;
+  int cells  = s.period / 60;
+  int filled = cd.now ? cells : cd.into / 60;
+  GColor fill_c = hot ? th.accent : th.bar;
   int pitch  = (bar_w + 1) / cells;
   bar_x += (bar_w + 1 - pitch * cells) / 2;   // only matters if a count that doesn't divide 60 is ever added
-
-  // Dots mean "the final ten": white minutes in the run-up, red seconds at the very end.
-  if (step == 1 || (step == 60 && ph.from < s.period)) {
-    int r = BAR_H / 2 + 1;
-    for (int i = 0; i < cells; i++) {
-      GPoint c = GPoint(bar_x + i * pitch + (pitch - 1) / 2, bar_y + BAR_H / 2);
-      if (i < filled) {
-        graphics_context_set_fill_color(ctx, fill_c);
-        graphics_fill_circle(ctx, c, r);
-#if !defined(PBL_COLOR)
-        // Without red to tell them apart, lit seconds get a hole so they differ from lit minutes.
-        if (step == 1) { graphics_context_set_fill_color(ctx, th.bg); graphics_fill_circle(ctx, c, 1); }
-#endif
-      } else {
-#if defined(PBL_COLOR)
-        graphics_context_set_fill_color(ctx, th.empty);
-        graphics_fill_circle(ctx, c, r);
-#else
-        graphics_context_set_stroke_color(ctx, th.bar);
-        graphics_context_set_stroke_width(ctx, 1);
-        graphics_draw_circle(ctx, c, r);
-#endif
-      }
-    }
-    cells = 0;
-  }
 
   for (int i = 0; i < cells; i++) {
     GRect cell = GRect(bar_x + i * pitch, bar_y, pitch - 1, BAR_H);
@@ -564,11 +533,11 @@ static void schedule_timer(void);
 static void check_vibe(struct tm *t) {
   // Double buzz at the mark itself; remember which mark so a timer and the minute tick can't both fire it.
   static time_t last_mark;
-  int into = (t->tm_min * 60 + t->tm_sec) % s.period;
-  time_t mark = time(NULL) - into;
-  if (s.mark_vibe && into < 3 && mark != last_mark) { last_mark = mark; vibes_double_pulse(); }
+  Countdown cd = countdown(t);
+  time_t mark = time(NULL) - cd.into;
+  if (s.mark_vibe && cd.into < 3 && mark != last_mark) { last_mark = mark; vibes_double_pulse(); }
 
-  if (current_phase(t).remaining > 60) { s_vibed = false; return; }
+  if (!cd.soon) { s_vibed = false; return; }
   if (s.vibe && !s_vibed) { vibes_short_pulse(); s_vibed = true; }
 }
 
@@ -580,20 +549,14 @@ static void timer_cb(void *ctx) {
   schedule_timer();
 }
 
-// In the final minute, wake exactly on each segment or phase boundary.
-// Outside it no timer runs at all; the minute tick does everything.
+// In the final minute, wake on each second. Every other change lands on a whole minute
+// (the offset is in minutes), so outside it no timer runs and the minute tick does everything.
 static void schedule_timer(void) {
   if (s_timer) return;
   time_t sec; uint16_t ms;
   time_ms(&sec, &ms);
-  struct tm *t = localtime(&sec);
-  Phase ph = current_phase(t);
-  if (ph.step >= 60) return;
-  int r = ph.remaining;
-  int target = r - (r % ph.step ? r % ph.step : ph.step);   // next segment edge
-  if (target < ph.next) target = ph.next;                    // or next phase start
-  int wait = (r - target) * 1000 - ms + 20;
-  s_timer = app_timer_register(wait, timer_cb, NULL);
+  if (!countdown(localtime(&sec)).final) return;
+  s_timer = app_timer_register(1000 - ms + 20, timer_cb, NULL);
 }
 
 /* ========================= weather / health ========================= */
@@ -651,6 +614,7 @@ static void inbox_cb(DictionaryIterator *it, void *ctx) {
   if ((tp = dict_find(it, MESSAGE_KEY_SLOT_B2))) { s.slot[3] = tuple_int(tp, 10); settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_SLOT_B3))) { s.slot[4] = tuple_int(tp, 10); settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_PERIOD)))  { s.period  = tuple_int(tp, 10); settings_changed = true; }
+  if ((tp = dict_find(it, MESSAGE_KEY_OFFSET)))  { s.offset  = tuple_int(tp, 10) % 60; settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_VIBE)))    { s.vibe    = tuple_int(tp, 10) != 0; settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_BT_VIBE))) { s.bt_vibe = tuple_int(tp, 10) != 0; settings_changed = true; }
   if ((tp = dict_find(it, MESSAGE_KEY_BT_ICON))) { s.bt_icon = tuple_int(tp, 10) != 0; settings_changed = true; }
@@ -676,11 +640,12 @@ static void inbox_cb(DictionaryIterator *it, void *ctx) {
   }
 
   if (settings_changed) {
-    if (s.period != 3600) s.period = 1800;
+    if (!valid_period(s.period)) s.period = 1800;
     persist_write_int(P_THEME, s.theme);
     persist_write_int(P_ACCENT, s.accent);
     for (int i = 0; i < 5; i++) persist_write_int(P_SLOT_TL + i, s.slot[i]);
     persist_write_int(P_PERIOD, s.period);
+    persist_write_int(P_OFFSET, s.offset);
     persist_write_bool(P_VIBE, s.vibe);
     persist_write_data(P_COLORS, s.color, sizeof s.color);
     persist_write_bool(P_BT_VIBE, s.bt_vibe);
@@ -708,6 +673,7 @@ static void load_settings(void) {
   if (persist_exists(P_ACCENT)) s.accent = persist_read_int(P_ACCENT);
   for (int i = 0; i < 5; i++) if (persist_exists(P_SLOT_TL + i)) s.slot[i] = persist_read_int(P_SLOT_TL + i);
   if (persist_exists(P_PERIOD)) s.period = persist_read_int(P_PERIOD);
+  if (persist_exists(P_OFFSET)) s.offset = persist_read_int(P_OFFSET);
   if (persist_exists(P_VIBE))   s.vibe   = persist_read_bool(P_VIBE);
   if (persist_exists(P_COLORS)) persist_read_data(P_COLORS, s.color, sizeof s.color);
   if (persist_exists(P_BT_VIBE))   s.bt_vibe   = persist_read_bool(P_BT_VIBE);
@@ -723,7 +689,8 @@ static void load_settings(void) {
   if (persist_exists(P_LOW_BATT))    s.low_batt    = persist_read_bool(P_LOW_BATT);
   if (persist_exists(P_BOTTOM_ICONS)) s.bottom_icons = persist_read_bool(P_BOTTOM_ICONS);
   if (persist_exists(P_DATE_STYLE))   s.date_style   = persist_read_int(P_DATE_STYLE);
-  if (s.period != 3600) s.period = 1800;
+  if (!valid_period(s.period)) s.period = 1800;
+  if (s.offset < 0 || s.offset > 59) s.offset = 0;
 }
 
 /* ============================== events ============================== */
