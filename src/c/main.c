@@ -113,6 +113,17 @@ static Theme theme(struct tm *t) {
   return th;
 }
 
+#if defined(PBL_COLOR)
+// One step darker on every channel that has one (FF0000 to AA0000); black steps up to dark grey.
+static GColor shade(GColor c) {
+  if (!(c.r | c.g | c.b)) return GColorDarkGray;
+  if (c.r) c.r--;
+  if (c.g) c.g--;
+  if (c.b) c.b--;
+  return c;
+}
+#endif
+
 /* ============================== state =============================== */
 static Window   *s_window;
 static Layer    *s_canvas;
@@ -495,6 +506,9 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   int cells  = s.period / 60;
   int filled = cd.now ? cells : cd.into / 60;
   GColor fill_c = hot ? th.accent : th.bar;
+#if defined(PBL_COLOR)
+  if (cd.final && cd.remaining <= 5 && cd.remaining % 2) fill_c = shade(fill_c);   // the last five pulse, a beat a second
+#endif
   int pitch  = (bar_w + 1) / cells;
   bar_x += (bar_w + 1 - pitch * cells) / 2;   // only matters if a count that doesn't divide 60 is ever added
 
