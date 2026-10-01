@@ -506,8 +506,11 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   int cells  = s.period / 60;
   int filled = cd.now ? cells : cd.into / 60;
   GColor fill_c = hot ? th.accent : th.bar;
+  // The last five seconds pulse, a beat a second: a shade darker on colour watches, a checkerboard
+  // grey on black-and-white ones.
+  bool pulse = cd.final && cd.remaining <= 5 && cd.remaining % 2;
 #if defined(PBL_COLOR)
-  if (cd.final && cd.remaining <= 5 && cd.remaining % 2) fill_c = shade(fill_c);   // the last five pulse, a beat a second
+  if (pulse) fill_c = shade(fill_c);
 #endif
   int pitch  = (bar_w + 1) / cells;
   bar_x += (bar_w + 1 - pitch * cells) / 2;   // only matters if a count that doesn't divide 60 is ever added
@@ -515,8 +518,21 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   for (int i = 0; i < cells; i++) {
     GRect cell = GRect(bar_x + i * pitch, bar_y, pitch - 1, BAR_H);
     if (i < filled) {
+      GRect lit = cell;
+#if !defined(PBL_COLOR)
+      // SOON can't turn red here, so the lit cells grow a pixel above and below instead.
+      if (cd.soon) lit = GRect(cell.origin.x, cell.origin.y - 1, cell.size.w, cell.size.h + 2);
+#endif
       graphics_context_set_fill_color(ctx, fill_c);
-      graphics_fill_rect(ctx, cell, 0, GCornerNone);
+      graphics_fill_rect(ctx, lit, 0, GCornerNone);
+#if !defined(PBL_COLOR)
+      if (pulse) {
+        graphics_context_set_stroke_color(ctx, th.bg);
+        for (int y = 0; y < lit.size.h; y++)
+          for (int x = (y + i * pitch) % 2; x < lit.size.w; x += 2)
+            graphics_draw_pixel(ctx, GPoint(lit.origin.x + x, lit.origin.y + y));
+      }
+#endif
     } else {
 #if defined(PBL_COLOR)
       graphics_context_set_fill_color(ctx, th.empty);
